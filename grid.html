@@ -1,3 +1,9 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Командная Kanban-доска: неограниченные колонки, перетаскивание карточек, подзадачи, дедлайны, приоритеты и ответственные.">
 <title>Grid</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,6 +41,7 @@
   --sh-drag:0 12px 34px rgba(14,26,28,.24);
   --focus:0 0 0 2px var(--ground), 0 0 0 4px var(--accent);
 
+  color-scheme:light dark;
   --r-s:6px; --r-m:10px; --r-l:14px;
   --f-ui:"Golos Text","Segoe UI",system-ui,-apple-system,sans-serif;
   --f-dis:"Unbounded","Golos Text","Segoe UI",system-ui,sans-serif;
@@ -76,7 +83,9 @@
 }
 
 *,*::before,*::after{box-sizing:border-box}
-body{background:var(--ground);color:var(--ink);font-family:var(--f-ui);
+[hidden]{display:none !important}
+img{max-width:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--f-ui);
   font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;background:none;border:none;padding:0}
@@ -344,9 +353,9 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .sheet-add input:focus{border-color:var(--accent)}
 
 /* ───────────────── drag ghost / toast ───────────────── */
-.ghost{position:fixed;z-index:90;pointer-events:none;box-shadow:var(--sh-drag);
+.drag-ghost{position:fixed;z-index:90;pointer-events:none;box-shadow:var(--sh-drag);
   transform:rotate(1.6deg);opacity:.96;border-radius:var(--r-m)}
-.ghost.col{border-radius:var(--r-l);transform:rotate(.8deg)}
+.drag-ghost.col{border-radius:var(--r-l);transform:rotate(.8deg)}
 .slot{border-radius:var(--r-m);background:var(--accent-soft);
   border:1.5px dashed var(--accent);flex:none}
 .slot.col{border-radius:var(--r-l);align-self:stretch}
@@ -369,14 +378,19 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .gate input{width:100%;padding:9px 11px;border-radius:var(--r-m);border:1px solid var(--line-2);
   background:var(--surface);outline:none;font-size:13.5px}
 .gate input:focus{border-color:var(--accent)}
-.gate .btn{width:100%;padding:10px;justify-content:center;text-align:center;font-size:14px}
+.gate .btn{display:block;width:100%;padding:10px;text-align:center;font-size:14px}
+.gate .btn.ghost,.sheet .btn.ghost{background:transparent;color:var(--ink-2);
+  border:1px solid var(--line-2)}
 .gate .btn.ghost{margin-top:9px}
+.gate .btn.ghost:hover,.sheet .btn.ghost:hover{color:var(--ink);border-color:var(--ink-3)}
 .gate .msg{font-size:12.5px;padding:9px 11px;border-radius:var(--r-m);margin-bottom:14px;line-height:1.5}
 .gate .msg.ok{background:var(--accent-soft);color:var(--accent)}
 .gate .msg.bad{background:var(--danger-soft);color:var(--danger)}
 .gate code{font-family:var(--f-mono);font-size:12px;background:var(--ground);
   padding:1px 5px;border-radius:4px;word-break:break-all}
 </style>
+</head>
+<body>
 
 <div class="app">
   <header class="rail">
@@ -982,7 +996,7 @@ function startDrag(e){
   drag.started=true; S.dragging=true; closeSheet();
   drag.dx=drag.x0-r.left; drag.dy=drag.y0-r.top;
   var g=host.cloneNode(true);
-  g.className=host.className.replace(/\bdrag-src\b/,"")+" ghost"+(drag.kind==="col"?" col":"");
+  g.className=host.className.replace(/\bdrag-src\b/,"")+" drag-ghost"+(drag.kind==="col"?" col":"");
   g.style.cssText+=";width:"+r.width+"px;left:"+r.left+"px;top:"+r.top+"px;margin:0";
   if(drag.kind==="col") g.style.maxHeight=r.height+"px";
   document.body.appendChild(g); drag.ghost=g;
@@ -1377,3 +1391,5 @@ function start(sb){
 })();
 })();
 </script>
+</body>
+</html>

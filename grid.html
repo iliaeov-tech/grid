@@ -261,14 +261,21 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 
 /* ───────────────── Гант ───────────────── */
 .pane{flex:1;min-height:0;overflow:auto;padding:16px}
+/* без боковых отступов: иначе липкая колонка «Задача» стоит не у самого края
+   прокрутки и в зазор слева видны уезжающие под неё даты */
+.pane.wide{padding:16px 0}
 .gantt{min-width:max-content;font-size:12.5px}
+/* обе строки шапки липнут как одно целое: по отдельности они обе вставали
+   на top:0 и накрывали друг друга */
+.g-head{position:sticky;top:0;z-index:4;width:max-content;background:var(--ground)}
 .g-row{display:grid;width:max-content;align-items:center;border-bottom:1px solid var(--line)}
-.g-row.head{position:sticky;top:0;z-index:2;background:var(--ground);
-  border-bottom:1px solid var(--line-2)}
+.g-row.head{background:var(--ground);border-bottom:1px solid var(--line-2)}
 /* каждый элемент строки размещаем явно: при смешении явных и авто-ячеек
    grid уводил название задачи во вторую строку */
-.g-name{grid-column:1;grid-row:1;padding:7px 10px 7px 0;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;position:sticky;left:0;
+/* align-self:stretch обязателен: иначе пустая ячейка во второй строке шапки
+   ниже самой строки и уезжающие под неё даты просвечивают сверху и снизу */
+.g-name{grid-column:1;grid-row:1;align-self:stretch;padding:7px 10px 7px 16px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;position:sticky;left:0;
   background:var(--ground);z-index:3;display:flex;align-items:center;gap:7px}
 .g-row.head .g-name{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
   color:var(--ink-3);font-weight:600}
@@ -367,6 +374,12 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
   background:var(--surface);cursor:pointer}
 .fields select:focus,.fields input:focus{border-color:var(--accent);outline:none}
 .dates{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* min-width:0 обязателен: поле даты в мобильном Safari требует ширину под
+   «8 сент. 2026 г.» и без этого распирает колонку за край экрана */
+.dt{display:flex;flex-direction:column;gap:3px;min-width:0}
+.dt>span{font-size:10px;color:var(--ink-3);letter-spacing:.05em;text-transform:uppercase;
+  font-weight:500}
+.fields .dt input{min-width:0;width:100%}
 
 .seg{display:flex;gap:4px;flex-wrap:wrap}
 .seg button{padding:5px 9px;border-radius:var(--r-s);font-size:12px;font-weight:500;
@@ -486,6 +499,40 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .gate .msg.bad{background:var(--danger-soft);color:var(--danger)}
 .gate code{font-family:var(--f-mono);font-size:12px;background:var(--ground);
   padding:1px 5px;border-radius:4px;word-break:break-all}
+
+/* ───────────────── узкий экран ───────────────── */
+@media (max-width:640px){
+  .rail{gap:9px;padding:9px 12px}
+  .rail-right{gap:7px}
+  .search input{width:150px}
+  select.pick{max-width:150px}
+  .notice{padding:6px 12px;font-size:12px}
+  .tabs{padding:0 8px}
+  .tab{padding:9px 10px;gap:6px}
+  .board{padding:12px;gap:10px}
+  .track{flex:0 0 86vw;max-width:320px}
+  .pane{padding:12px}
+  .pane.wide{padding:12px 0}
+  /* подпись над полем, а не слева: на узкой панели делить ширину нечем */
+  .fields{grid-template-columns:1fr;gap:3px 0}
+  .fields .lbl{margin-top:9px}
+  .cal-day{grid-template-columns:76px 1fr;gap:12px}
+  .drawer{width:100vw}
+}
+@media (max-width:430px){
+  .dates{grid-template-columns:1fr}
+}
+
+/* ───────────────── низкий экран (телефон боком) ─────────────────
+   Не запираем страницу в 100dvh: на шапку и вкладки уходит вся высота,
+   и на диаграмму не остаётся ничего — виден один заголовок. Пусть
+   вместо этого прокручивается сама страница. */
+@media (max-height:560px){
+  .app{height:auto;min-height:100dvh;overflow:visible}
+  .main{overflow:visible}
+  .pane{min-height:320px}
+  .board{min-height:340px}
+}
 </style>
 </head>
 <body>
@@ -954,7 +1001,14 @@ function addComment(cardId,text){
   var body={cardId:cardId,author:meName(),body:text,createdAt:Date.now()};
   S.comments.push(Object.assign({id:id},body));
   w(S.store.set("comments",id,body));
-  renderDrawer(true); renderMain();
+  renderDrawer(true);
+  /* доводим до конца списка, чтобы новый комментарий был виден,
+     и возвращаем курсор в поле ввода */
+  var b=$(".d-body",drawerEl);
+  if(b) b.scrollTop=b.scrollHeight;
+  var box=$("[data-kadd]",drawerEl);
+  if(box) box.focus();
+  renderMain();
 }
 var noteT;
 function saveNotes(text){
@@ -1178,26 +1232,31 @@ function renderGantt(){
       MONTHS_FULL[m]+(days[mi].getFullYear()!==new Date().getFullYear()?" "+days[mi].getFullYear():"")+"</div>";
     mi+=span;
   }
-  var head='<div class="g-row head" style="'+tpl+'"><div class="g-name">Задача</div>'+months+"</div>"+
+  var head='<div class="g-head">'+
+    '<div class="g-row head" style="'+tpl+'"><div class="g-name">Задача</div>'+months+"</div>"+
     '<div class="g-row head" style="'+tpl+'"><div class="g-name"></div>'+
-    days.map(function(d){
+    days.map(function(d,i){
       var we=(d.getDay()===0||d.getDay()===6),td=(+d===+today);
-      return '<div class="g-day'+(we?" we":"")+(td?" today":"")+'">'+d.getDate()+"<br>"+WEEK[d.getDay()]+"</div>";
-    }).join("")+"</div>";
+      return '<div class="g-day'+(we?" we":"")+(td?" today":"")+'" style="grid-column:'+(i+2)+'">'+
+        d.getDate()+"<br>"+WEEK[d.getDay()]+"</div>";
+    }).join("")+"</div></div>";
 
   var body=rows.map(function(r){
     var c=r.c,pr=c.priority||"med";
     var from=clamp(daysBetween(min,r.s),0,n-1),to=clamp(daysBetween(min,r.e),0,n-1);
     var span=Math.max(1,to-from+1);
-    var cells=days.map(function(d){
+    /* колонка задаётся явно: иначе ячейки авто-раскладкой обходят полосу
+       задачи, которая уже заняла свои колонки, и весь ряд уезжает вправо */
+    var cells=days.map(function(d,i){
       var we=(d.getDay()===0||d.getDay()===6),td=(+d===+today);
-      return '<div class="g-cell'+(we?" we":"")+(td?" today":"")+'"></div>';}).join("");
+      return '<div class="g-cell'+(we?" we":"")+(td?" today":"")+'" style="grid-column:'+(i+2)+'"></div>';
+    }).join("");
     return '<div class="g-row" style="'+tpl+";--pc:"+prioVar(pr)+'" data-card="'+esc(c.id)+'">'+
       '<div class="g-name'+(c.done?" done":"")+'"><span class="dot"></span>'+esc(c.title)+"</div>"+cells+
       '<div class="g-bar'+(c.done?" done":"")+'" style="grid-column:'+(from+2)+" / span "+span+'">'+
       esc(c.title)+"</div></div>";
   }).join("");
-  mainEl.innerHTML='<div class="pane"><div class="gantt">'+head+body+"</div></div>";
+  mainEl.innerHTML='<div class="pane wide"><div class="gantt">'+head+body+"</div></div>";
 }
 
 /* ═════════ календарь ═════════ */
@@ -1322,8 +1381,11 @@ function renderDrawer(force){
         .map(function(m){return '<option value="'+esc(m.id)+'"'+(m.id===c.assignee?" selected":"")+">"+esc(m.name)+"</option>";}).join("")+
     "</select></div>"+
     '<span class="lbl">Сроки</span><div class="ctl"><div class="dates">'+
-      '<input type="date" data-dstart="1" value="'+esc(c.start||"")+'" title="Начало" aria-label="Дата начала">'+
-      '<input type="date" data-ddue="1" value="'+esc(c.due||"")+'" title="Дедлайн" aria-label="Дедлайн"></div></div>'+
+      '<label class="dt"><span>Начало</span>'+
+        '<input type="date" data-dstart="1" value="'+esc(c.start||"")+'" aria-label="Дата начала"></label>'+
+      '<label class="dt"><span>Дедлайн</span>'+
+        '<input type="date" data-ddue="1" value="'+esc(c.due||"")+'" aria-label="Дедлайн"></label>'+
+    "</div></div>"+
   "</div>";
 
   body+='<div><div class="sect-h"><h3>Подзадачи</h3>'+
@@ -1362,13 +1424,19 @@ function renderDrawer(force){
   var foot='<div class="d-foot"><button class="btn danger" data-ddel="1">Удалить задачу</button>'+
     '<span class="stamp">'+(c.updatedAt?"изм. "+fmtWhen(c.updatedAt):"")+"</span></div>";
 
+  /* панель перерисовывается целиком, поэтому прокрутку сохраняем сами —
+     иначе после любой правки содержимое отбрасывает в самый верх */
+  var was=$(".d-body",drawerEl),keep=was?was.scrollTop:0;
   drawerEl.innerHTML=h+body+foot;
+  var now=$(".d-body",drawerEl);
+  if(now&&keep) now.scrollTop=keep;
   var ta=$("[data-dtitle]",drawerEl);
   if(ta){ta.style.height="auto";ta.style.height=ta.scrollHeight+"px";}
 }
 function openCard(id){
   S.open=id; drawerEl.classList.add("on"); scrimEl.classList.add("on");
   drawerEl.setAttribute("aria-hidden","false"); renderDrawer(true);
+  var b=$(".d-body",drawerEl); if(b) b.scrollTop=0;   /* новая задача — сверху */
 }
 function closeDrawer(){
   S.open=null; drawerEl.classList.remove("on"); scrimEl.classList.remove("on");

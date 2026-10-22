@@ -5,3 +5,6 @@ notes.md
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# сторонний скилл ui-ux-pro-max: ставится локально, см. CLAUDE.md
+.claude/skills/ui-ux-pro-max/

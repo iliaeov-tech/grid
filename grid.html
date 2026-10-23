@@ -3,11 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="Grid — командные Kanban-доски: проекты, неограниченные колонки, подзадачи, дедлайны, Гант, календарь, файлы и комментарии.">
+<meta name="description" content="Grid Work — командные Kanban-доски с проектами, Гантом и календарём. Grid Life — личный календарь задач, который работает без интернета.">
+<meta name="theme-color" content="#FFFFFF">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Grid</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/grid-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600&display=swap">
+<link rel="stylesheet" href="life.css">
 <script src="grid.config.js"></script>
 <script>
 /* режим ставим до отрисовки, чтобы не мелькал акцент другого режима;
@@ -2163,11 +2169,12 @@ function cardMenu(anchor,id){
     });
   },"menu");
 }
-/* создание и правка своего типа: название, цвет, иконка */
-function kindEditor(anchor,scope,id,onCreate){
-  var k=id?find(S.kinds,id):null;
+/* Окно своего типа: название, цвет, иконка. Им пользуются оба режима,
+   а где хранить тип, решает вызывающий: o.save(черновик), o.remove(). */
+function typeEditor(anchor,o){
+  var k=o.kind;
   var d={label:k?k.label:"",color:k?k.color:"teal",icon:k?k.icon:"star"};
-  var html="<h3>"+(k?"Свой тип ":"Новый тип ")+(scope==="note"?"заметки":"задачи")+"</h3>"+
+  var html="<h3>"+esc(o.title)+"</h3>"+
     '<input class="in" data-kname="1" maxlength="40" placeholder="Название" aria-label="Название типа" value="'+esc(d.label)+'">'+
     '<div class="fl">Цвет</div><div class="tints">'+TINTS.map(function(t){
       return '<button class="tint" data-ktint="'+t.id+'" aria-pressed="'+(d.color===t.id)+'" aria-label="'+t.label+
@@ -2177,7 +2184,7 @@ function kindEditor(anchor,scope,id,onCreate){
         ic(x[0])+"</button>";}).join("")+"</div>"+
     '<div class="fl">Так он будет выглядеть</div><div data-kprev="1"></div>'+
     '<div class="row"><button class="btn" data-ksave="1">'+(k?"Сохранить":"Создать")+"</button>"+
-      '<span class="sp"></span>'+(k?'<button class="btn danger" data-kremove="1">Удалить</button>':"")+"</div>";
+      '<span class="sp"></span>'+(o.remove?'<button class="btn danger" data-kremove="1">Удалить</button>':"")+"</div>";
   openSheet(anchor,html,function(sh){
     var name=$("[data-kname]",sh);
     function preview(){$("[data-kprev]",sh).innerHTML=kindChip({label:name.value.trim()||"Название",color:d.color,icon:d.icon});}
@@ -2188,9 +2195,7 @@ function kindEditor(anchor,scope,id,onCreate){
     function save(){
       d.label=name.value.trim();
       if(!d.label){name.classList.add("bad");name.focus();return;}
-      closeSheet();
-      var nid=saveKind(scope,id,d);
-      if(!id&&onCreate) onCreate(nid);
+      closeSheet(); o.save(d);
     }
     preview(); setTimeout(function(){name.focus();},0);
     sh.addEventListener("input",function(e){if(e.target===name){name.classList.remove("bad");preview();}});
@@ -2200,9 +2205,15 @@ function kindEditor(anchor,scope,id,onCreate){
       if((b=e.target.closest("[data-ktint]"))) pick("data-ktint","color",b);
       else if((b=e.target.closest("[data-kicon]"))) pick("data-kicon","icon",b);
       else if(e.target.closest("[data-ksave]")) save();
-      else if(e.target.closest("[data-kremove]")){closeSheet();removeKind(id);}
+      else if(e.target.closest("[data-kremove]")){closeSheet();o.remove();}
     });
   });
+}
+function kindEditor(anchor,scope,id,onCreate){
+  var k=id?find(S.kinds,id):null;
+  typeEditor(anchor,{kind:k,title:(k?"Свой тип ":"Новый тип ")+(scope==="note"?"заметки":"задачи"),
+    save:function(d){var nid=saveKind(scope,id,d);if(!id&&onCreate)onCreate(nid);},
+    remove:k?function(){removeKind(id);}:null});
 }
 function kindList(anchor,scope){
   function html(){
@@ -3165,7 +3176,12 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
   WEEK:WEEK,iso:iso,parseISO:parseISO,todayISO:todayISO,shortDate:shortDate,daysBetween:daysBetween,
   fmtSize:fmtSize,fmtWhen:fmtWhen,flash:flash,openSheet:openSheet,closeSheet:closeSheet,menuHTML:menuHTML,
   drawerHead:drawerHead,X_BTN:X_BTN,CHECK_SVG:CHECK_SVG,closeSide:closeSide,openSettings:openSettings,
-  renderSide:renderSide,renderSettings:renderSettings,scrim:scrimEl};
+  renderSide:renderSide,renderSettings:renderSettings,scrim:scrimEl,
+  typeEditor:typeEditor,kindChip:kindChip,orderBetween:orderBetween,byOrder:byOrder,find:find};
+/* работа без сети и установка на главный экран (только на http/https) */
+if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
+  window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});
+}
 /* life.js подключается следующим скриптом, поэтому стартуем, когда он загружен */
 document.addEventListener("DOMContentLoaded",function(){setMode(root.dataset.mode);});
 })();

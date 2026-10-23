@@ -1,0 +1,171 @@
+/* ============================================================
+   Grid Life — личный календарь. Цвета и шрифты — токены из grid.html.
+   Сначала телефон: крупные зоны нажатия, кнопка «+» под большим пальцем.
+   ============================================================ */
+#lifeMain{position:relative}
+.lv{flex:1;min-height:0;display:flex;flex-direction:column}
+
+/* ── тулбар: виды и навигация ── */
+.lt{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:var(--surface);
+  border-bottom:1px solid var(--line);flex:none}
+.lt-views{display:flex;background:var(--track);border-radius:10px;padding:3px;gap:2px}
+.lt-views button{padding:7px 12px;border-radius:8px;font-size:13px;font-weight:500;color:var(--ink-2);min-height:34px}
+.lt-views button[aria-selected="true"]{background:var(--surface);color:var(--accent);box-shadow:var(--sh-1)}
+.lt-nav{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+.lt-title{margin:0;font-size:15px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.lt .icon-btn{width:36px;height:36px}
+.lt .lt-today{border:1px solid var(--line-2);min-height:36px}
+
+.lv-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.lpane{max-width:760px;margin:0 auto;padding:14px 16px 110px;display:flex;flex-direction:column;gap:18px}
+.lnote{font-size:12px;color:var(--ink-3);text-align:center;margin:4px 0 0}
+
+/* ── список по дням ── */
+.lsec{display:flex;flex-direction:column;gap:6px}
+.lsec-h{display:flex;align-items:center;gap:8px;min-height:36px}
+.lsec-h h3{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600}
+.lsec-h .n{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
+.lsec-h .sp{flex:1}
+.lsec.od{background:var(--danger-soft);border-radius:var(--r-l);padding:8px 10px 10px}
+.lsec.od .lsec-h h3{color:var(--danger)}
+.lday-h{display:flex;align-items:center;gap:6px;min-height:40px}
+.lday-t{flex:1;text-align:left;font-size:14px;font-weight:600;padding:8px 2px;border-radius:var(--r-s)}
+.lday-t small{font-weight:400;color:var(--ink-3);margin-left:6px}
+.lday-t.today{color:var(--accent)}
+.lday-h .icon-btn{width:40px;height:40px;color:var(--ink-3)}
+.lday-h .icon-btn:hover{color:var(--accent)}
+.lempty{width:100%;text-align:left;padding:12px 14px;border-radius:var(--r-m);border:1.5px dashed var(--line-2);
+  color:var(--ink-3);font-size:13px;min-height:48px}
+.lempty:hover{border-color:var(--accent);color:var(--accent)}
+.lmore{align-self:center;padding:10px 16px;border-radius:99px;border:1px solid var(--line-2);color:var(--ink-2);
+  font-size:13px;min-height:44px}
+.lmore:hover{border-color:var(--accent);color:var(--accent)}
+
+.lrow{position:relative;display:flex;align-items:center;gap:6px;background:var(--surface);border-radius:var(--r-m);
+  box-shadow:var(--sh-1);padding:0 8px 0 14px;min-height:52px}
+.lrow::before{content:"";position:absolute;left:5px;top:10px;bottom:10px;width:3px;border-radius:99px;
+  background:var(--pc,var(--line-2))}
+.lrow .check{width:24px;height:24px;margin:0 4px 0 0;flex:none}
+.lp .check{width:26px;height:26px}
+.lrow .check::after{content:"";position:absolute;inset:-11px}
+.lrow .check{position:relative}
+.lrow-main{flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:left;padding:8px 0;min-height:52px}
+.lrow-time{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);flex:none;width:78px;line-height:1.3}
+.lrow-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.lrow-title{font-size:14px;font-weight:500;line-height:1.35;word-break:break-word}
+.lrow-meta{display:flex;flex-wrap:wrap;gap:5px}
+.lrow-meta:empty{display:none}
+.lrow.done .lrow-title{text-decoration:line-through;color:var(--ink-3);font-weight:400}
+.lrow.done::before{background:var(--line-2)}
+.lrow .btn.sm{padding:6px 10px;font-size:12px;border:1px solid var(--line-2);flex:none;min-height:34px}
+
+.lbanner{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:var(--r-l);
+  background:var(--accent-soft);color:var(--ink);font-size:13px;line-height:1.5}
+.lbanner .row{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── день и неделя: сетка часов ── */
+.lgrid{flex:1;min-height:0;display:flex;flex-direction:column;--hh:48px}
+.lg-row{display:grid;grid-template-columns:44px repeat(var(--days),minmax(0,1fr));background:var(--surface)}
+.lg-head{border-bottom:1px solid var(--line)}
+.lg-dh{display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 0;font-size:11px;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.04em}
+.lg-dh b{font-size:17px;font-weight:600;color:var(--ink);letter-spacing:0;width:32px;height:32px;border-radius:50%;
+  display:grid;place-items:center}
+.lg-dh.today{color:var(--accent)}
+.lg-dh.today b{background:var(--accent);color:var(--accent-ink)}
+.lg-allday{border-bottom:1px solid var(--line-2)}
+.lg-gutter{font-size:10px;color:var(--ink-3);text-align:right;padding:6px 6px 0 0;line-height:1.2}
+.lg-ad{min-height:34px;padding:3px 3px 16px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:2px;cursor:pointer}
+.lg-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.lg-body{display:grid;grid-template-columns:44px repeat(var(--days),minmax(0,1fr));position:relative;
+  height:calc(var(--hh) * 24)}
+.lg-hours{position:relative}
+.lg-hours span{position:absolute;right:6px;transform:translateY(-50%);font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
+.lg-hours i{font-style:normal}
+.lcol{position:relative;border-left:1px solid var(--line);cursor:pointer;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px);background-size:100% var(--hh)}
+.lcol.today{background-color:color-mix(in srgb,var(--accent-soft) 45%,transparent)}
+.lnow{position:absolute;left:0;right:0;height:2px;background:var(--accent);z-index:2;pointer-events:none}
+.lnow::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+
+/* блок задачи: цвет типа, у задачи без типа — акцент режима */
+.lblk{position:absolute;z-index:1;border-radius:6px;padding:3px 6px;text-align:left;overflow:hidden;
+  background:var(--kb,var(--accent-soft));color:var(--ki,var(--accent));border-left:3px solid var(--ki,var(--accent));
+  font-size:11.5px;line-height:1.3;box-shadow:0 0 0 1px var(--surface)}
+.lblk b{display:block;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lblk.done b{text-decoration:line-through;color:var(--ink-3);font-weight:500}
+.lblk.done{opacity:.7}
+.lchip{display:block;width:100%;text-align:left;padding:3px 6px;border-radius:5px;font-size:11.5px;font-weight:500;
+  background:var(--kb,var(--accent-soft));color:var(--ink);border-left:3px solid var(--ki,var(--accent));
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lchip.done{text-decoration:line-through;color:var(--ink-3)}
+
+/* ── месяц ── */
+.lmonth{padding:10px 12px 110px;max-width:1100px;margin:0 auto;width:100%}
+.lm-week,.lm-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.lm-week span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);text-align:center;padding:4px 0 6px}
+.lm-grid{gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-l);overflow:hidden}
+.mc{background:var(--surface);min-height:96px;padding:4px;display:flex;flex-direction:column;gap:2px;cursor:pointer;
+  text-align:left;min-width:0}
+.mc.out{background:var(--surface-2)}
+.mc.out .mc-n{color:var(--ink-3)}
+.mc-n{font-size:12.5px;font-weight:600;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none}
+.mc.today .mc-n{background:var(--accent);color:var(--accent-ink)}
+.mc.sel{box-shadow:inset 0 0 0 2px var(--accent)}
+.mc-items{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mc-more{font-size:11px;color:var(--ink-3);padding-left:4px}
+.mc-dots{display:none}
+.lm-agenda{margin-top:16px;display:flex;flex-direction:column;gap:6px}
+
+/* ── кнопка «+» ── */
+.lfab{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:20;width:58px;height:58px;
+  border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;
+  box-shadow:0 6px 18px rgba(33,38,57,.25);transition:transform .15s}
+.lfab:active{transform:scale(.94)}
+.lfab svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+
+/* ── панель задачи ── */
+.lp .fields{grid-template-columns:96px 1fr}
+.lp .d-title{font-size:19px}
+.lp .quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.lp .quick button{padding:6px 11px;border-radius:99px;border:1px solid var(--line-2);font-size:12.5px;min-height:34px}
+.lp .quick button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.lp .times{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.lp .times input{width:auto;min-width:0;flex:1;max-width:140px;min-height:40px}
+.lp .times span{color:var(--ink-3)}
+.lp input[type="date"]{min-height:40px}
+.lp .d-desc{min-height:70px}
+.lp .switch{padding:4px 0 0}
+.lp .hint{margin:6px 0 0;font-size:12px;color:var(--ink-3);font-family:inherit}
+
+@media (max-width:640px){
+  .lt{padding:8px 12px;gap:8px}
+  .lt-views{width:100%}
+  .lt-views button{flex:1;padding:8px 4px;min-height:40px}
+  .lpane{padding:12px 12px 110px}
+  .lmonth{padding:8px 6px 110px}
+  .mc{min-height:62px;padding:3px 2px;align-items:center}
+  .mc .mc-items{display:none}
+  .mc .mc-dots{display:flex;gap:3px;flex-wrap:wrap;justify-content:center}
+  .mc-dots i{width:6px;height:6px;border-radius:50%;background:var(--ki,var(--accent))}
+  .lg-row,.lg-body{grid-template-columns:36px repeat(var(--days),minmax(0,1fr))}
+  .lg-hours span{right:4px}
+  .lg-hours i{display:none}
+  .lrow-time{width:58px;font-size:11px}
+  .lgrid.week .lblk{padding:2px 3px;font-size:10px}
+  .lgrid.week .lblk span{display:none}
+  .lgrid.week .lchip{padding:2px 3px;font-size:10px}
+  /* на телефоне панель задачи — лист снизу, под большой палец */
+  .drawer.lp{top:auto;left:0;right:0;width:100%;max-height:92dvh;border-left:none;border-radius:18px 18px 0 0;
+    transform:translateY(102%);padding-bottom:env(safe-area-inset-bottom)}
+  .drawer.lp.on{transform:none}
+  .lp .fields{grid-template-columns:1fr}
+}
+
+/* ── боковая панель Life: виды и типы ── */
+.prow .lk-box{width:18px;height:18px;border-radius:5px;flex:none;display:grid;place-items:center;
+  border:1.6px solid var(--ki,var(--accent))}
+.lk[aria-pressed="true"] .lk-box{background:var(--ki,var(--accent))}
+.prow .pick .lk-box svg{width:11px;height:11px;color:#fff;stroke-width:3}
+.lk[aria-pressed="false"] b{color:var(--ink-3)}

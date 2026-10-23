@@ -560,13 +560,28 @@ function openTask(key){
 function newTask(o){
   P={id:null,date:"",draft:blankTask(o),edits:{},custom:false,series:false}; showPanel(true);
 }
+/* Клавиатура iPhone не уменьшает окно, а наезжает на него. На телефоне лист
+   задачи поднимаем над ней по видимой области экрана (visualViewport) и
+   держим форму прокрученной к началу, пока в фокусе название. */
+var vv=window.visualViewport,phone=window.matchMedia("(max-width:640px)");
+function fitSheet(){
+  if(!panelOpen()||!phone.matches||!vv){panel.style.bottom="";panel.style.maxHeight="";return;}
+  var kb=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
+  panel.style.bottom=kb+"px";
+  panel.style.maxHeight=Math.max(240,Math.round(vv.height)-8)+"px";
+  var body=$(".d-body",panel);
+  if(body&&document.activeElement&&document.activeElement.matches("[data-lf=title]")) body.scrollTop=0;
+}
+if(vv){vv.addEventListener("resize",fitSheet);vv.addEventListener("scroll",fitSheet);}
 function showPanel(focusTitle){
   K.closeSheet(); K.closeSide();
   panel.innerHTML=panelHTML();
   panel.classList.add("on"); K.scrim.classList.add("on"); panel.setAttribute("aria-hidden","false");
   fitTitle();
+  var body=$(".d-body",panel); if(body) body.scrollTop=0;      /* форма — с самого верха */
   var b=focusTitle?$("[data-lf=title]",panel):$("[data-dclose]",panel);
-  if(b) b.focus();
+  if(b) b.focus({preventScroll:true});
+  fitSheet();
 }
 function fitTitle(){var ta=$("[data-lf=title]",panel);if(ta){ta.style.height="auto";ta.style.height=ta.scrollHeight+"px";}}
 function repaintPanel(){
@@ -588,6 +603,7 @@ function flushTitle(){
 }
 function hidePanel(){
   panel.classList.remove("on"); K.scrim.classList.remove("on"); panel.setAttribute("aria-hidden","true");
+  fitSheet();
   P={id:null,date:"",draft:null,edits:{},custom:false,series:false};
   render();
 }
@@ -1012,6 +1028,11 @@ function onSettingsClick(e){
     installEvt.prompt(); installEvt.userChoice.then(function(){installEvt=null;K.renderSettings();});
   }
 }
+var railToday=document.createElement("button");
+railToday.className="btn ghost life-only rail-today"; railToday.textContent="Сегодня";
+railToday.setAttribute("data-ltoday","1");
+$(".rail").appendChild(railToday);
+railToday.addEventListener("click",function(e){onMainClick(e);});
 $("#side").addEventListener("click",onSideClick);
 $("#settings").addEventListener("click",onSettingsClick);
 K.scrim.addEventListener("click",function(){if(isLife())closePanel();});

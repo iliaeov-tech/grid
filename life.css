@@ -15,7 +15,8 @@
 .lt-title{margin:0;font-size:15px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 .lt .icon-btn{width:36px;height:36px}
-.lt .lt-today{border:1px solid var(--line-2);min-height:36px}
+.lt .lt-today,.rail-today{border:1px solid var(--line-2);min-height:36px}
+.rail-today{display:none}
 
 .lv-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 .lpane{max-width:760px;margin:0 auto;padding:14px 16px calc(110px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:18px}
@@ -142,6 +143,12 @@
 
 @media (max-width:640px){
   .lt{padding:8px 12px;gap:8px}
+  /* «Сегодня» уезжает в шапку: стрелки по краям, дата по центру */
+  .lt .lt-today{display:none}
+  :root[data-mode="life"] .rail-today{display:inline-flex;margin-left:auto;padding:6px 12px}
+  .lt-title{text-align:center}
+  .lgrid.day .lg-head{grid-template-columns:1fr}
+  .lgrid.day .lg-head>div:first-child{display:none}
   .lt-views{width:100%}
   .lt-views button{flex:1;padding:8px 4px;min-height:40px}
   .lpane{padding:12px 12px 110px}

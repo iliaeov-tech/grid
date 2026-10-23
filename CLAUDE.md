@@ -4,4 +4,4 @@ For current-project requests, load the installed SkipHow skill before consequent
 
 ## Проверка интерфейса
 
-Скилл `ui-ux-pro-max` лежит в `.claude/skills/ui-ux-pro-max` и в git не входит. Источник: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill, коммит 076a2b3, папка `.claude/skills/ui-ux-pro-max`. Он нужен только для проверки качества интерфейса. Палитру, логотип и шрифты Grid меняет только владелец: шрифты и стиль логотипа прежние, у режимов свой акцент — Grid Work красный, Grid Life зелёный. Если указания скилла расходятся со SkipHow, действует SkipHow.
+Скилл `ui-ux-pro-max` лежит в `.claude/skills/ui-ux-pro-max` и в git не входит. Источник: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill, коммит 076a2b3, папка `.claude/skills/ui-ux-pro-max`. Он нужен только для проверки качества интерфейса. Палитру, логотип и шрифты Grid меняет только владелец: шрифты и стиль логотипа прежние, у режимов свой акцент — Grid Work ультрамарин #6022F5, Grid Life зелёный; смысловые красные (срочно, удаление, ошибки) — не акцент. Если указания скилла расходятся со SkipHow, действует SkipHow.

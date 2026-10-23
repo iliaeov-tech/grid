@@ -36,10 +36,10 @@
   --line:#E5E8F1;
   --line-2:#D2D7E6;
 
-  /* акцент режима: Grid Work — красный, Grid Life — зелёный (ниже) */
-  --accent:#C8302A;
-  --accent-hov:#A82720;
-  --accent-soft:#FCE8E6;
+  /* акцент режима: Grid Work — ультрамарин, Grid Life — зелёный (ниже) */
+  --accent:#6022F5;
+  --accent-hov:#4C16D4;
+  --accent-soft:#EFEAFE;
   --accent-ink:#FFFFFF;
 
   --p-low:#7B8AAD;    --p-low-soft:#EAEEF7;
@@ -79,9 +79,9 @@
 
 :root[data-mode="life"]{--accent:#167A38;--accent-hov:#12652E;--accent-soft:#E6F4EA}
 /* зарегистрированные цвета плавно перетекают при смене режима */
-@property --accent{syntax:"<color>";inherits:true;initial-value:#C8302A}
-@property --accent-hov{syntax:"<color>";inherits:true;initial-value:#A82720}
-@property --accent-soft{syntax:"<color>";inherits:true;initial-value:#FCE8E6}
+@property --accent{syntax:"<color>";inherits:true;initial-value:#6022F5}
+@property --accent-hov{syntax:"<color>";inherits:true;initial-value:#4C16D4}
+@property --accent-soft{syntax:"<color>";inherits:true;initial-value:#EFEAFE}
 :root{transition:--accent .3s,--accent-hov .3s,--accent-soft .3s}
 :root[data-mode="life"] .work-only,:root[data-mode="work"] .life-only{display:none !important}
 

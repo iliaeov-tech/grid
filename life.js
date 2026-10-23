@@ -119,9 +119,98 @@ function visible(t){return hiddenKinds().indexOf(kindOf(t.kind)?t.kind:"")<0;}
 function filesOf(id){return L.files.filter(function(f){return f.taskId===id&&!f.deletedAt;});}
 function prioRank(t){return ["low","med","high","urgent"].indexOf(t.priority||"med");}
 
-/* Задача в календаре — «появление» в конкретный день. Пока задача
-   встречается один раз, появление совпадает с ней самой. */
-function item(t,date){return {t:t,date:date,done:!!t.done,key:t.id+"|"+date};}
+/* ═════════ повторы ═════════ */
+/* У повторяющейся задачи repeat = {freq:"day"|"week"|"month"|"year", every:N,
+   days:[0–6, пн=0] для недель, end:"never"|"until"|"count", until, count}.
+   Отдельные повторы живут в occ по исходной дате: {done} — выполнен только
+   он, {deleted} — удалён только он, {patch:{…}} — изменён только он
+   (patch.date — перенесён на другой день). */
+var MAX_STEPS=20000;
+function wdIdx(s){return (K.parseISO(s).getDay()+6)%7;}
+function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}
+function plural(n,one,few,many){
+  var a=n%10,b=n%100;
+  return a===1&&b!==11?one:a>=2&&a<=4&&(b<12||b>14)?few:many;
+}
+/* Даты серии в [from,to]. Повторы считаются от начала серии, поэтому
+   «после N раз» работает и для дат далеко впереди. Если в месяце нет
+   нужного числа (31-е, 29 февраля), повтор пропускается, как в Google. */
+function seriesDates(t,from,to){
+  var r=t.repeat,out=[],n=0,steps=0,every=Math.max(1,+r.every||1);
+  var limit=r.end==="until"&&r.until&&r.until<to?r.until:to;
+  var max=r.end==="count"?Math.max(1,+r.count||1):Infinity;
+  function add(d){n++;if(d>=from)out.push(d);}
+  if(r.freq==="day"){
+    for(var d=t.date;d<=limit&&n<max&&steps++<MAX_STEPS;d=addDays(d,every)) add(d);
+  }else if(r.freq==="week"){
+    var days=(r.days&&r.days.length?r.days:[wdIdx(t.date)]).slice().sort();
+    for(var w=weekStart(t.date);w<=limit&&n<max&&steps++<MAX_STEPS;w=addDays(w,7*every)){
+      for(var i=0;i<days.length&&n<max;i++){
+        var x=addDays(w,days[i]);
+        if(x<t.date) continue;
+        if(x>limit) break;
+        add(x);
+      }
+    }
+  }else{
+    var s=K.parseISO(t.date),y=s.getFullYear(),m=s.getMonth(),dd=s.getDate(),step=r.freq==="year"?12*every:every;
+    for(var k=0;n<max&&steps++<MAX_STEPS;k++){
+      var mm=m+k*step,yy=y+Math.floor(mm/12),mo=mm%12;
+      if(dd>daysInMonth(yy,mo)) continue;
+      var x2=yy+"-"+pad(mo+1)+"-"+pad(dd);
+      if(x2>limit) break;
+      add(x2);
+    }
+  }
+  return out;
+}
+function isSeriesDate(t,d){return seriesDates(t,d,d).length>0;}
+function shiftMonths(s,n){
+  var d=K.parseISO(s),day=d.getDate();
+  d.setDate(1); d.setMonth(d.getMonth()+n);
+  d.setDate(Math.min(day,daysInMonth(d.getFullYear(),d.getMonth())));
+  return K.iso(d);
+}
+function repeatLabel(r,date){
+  if(!r) return "";
+  var n=Math.max(1,+r.every||1),s;
+  if(r.freq==="day") s=n===1?"Каждый день":"Каждые "+n+" "+plural(n,"день","дня","дней");
+  else if(r.freq==="week") s=(n===1?"Каждую неделю":"Каждые "+n+" "+plural(n,"неделю","недели","недель"))+": "+
+    (r.days&&r.days.length?r.days:[wdIdx(date)]).slice().sort().map(function(i){return WEEKDAYS[i];}).join(", ");
+  else if(r.freq==="month") s=(n===1?"Каждый месяц":"Каждые "+n+" "+plural(n,"месяц","месяца","месяцев"))+", "+
+    K.parseISO(date).getDate()+"-го числа";
+  else s=(n===1?"Каждый год":"Каждые "+n+" "+plural(n,"год","года","лет"))+", "+longDate(date);
+  if(r.end==="until"&&r.until) s+=", до "+longDate(r.until)+" "+r.until.slice(0,4);
+  if(r.end==="count") s+=", всего "+r.count+" "+plural(+r.count,"раз","раза","раз");
+  return s;
+}
+
+/* Задача в календаре — «появление» в конкретный день: у обычной задачи
+   оно одно и совпадает с ней, у повторяющейся их много. it.t — то, что
+   показываем (с правками этого повтора), it.task — сама запись,
+   it.orig — исходная дата повтора. */
+function item(t,date){return {t:t,task:t,orig:date,date:date,done:!!t.done,key:t.id+"|"+date,rec:false};}
+function occItem(t,orig){
+  var o=(t.occ||{})[orig]||{},v=Object.assign({},t,o.patch||{});
+  v.date=(o.patch&&o.patch.date)||orig;
+  return {t:v,task:t,orig:orig,date:v.date,done:!!o.done,key:t.id+"|"+orig,rec:true};
+}
+function occurrencesIn(t,from,to){
+  var occ=t.occ||{},out=[],seen={};
+  seriesDates(t,from,to).forEach(function(d){
+    seen[d]=1;
+    if(occ[d]&&occ[d].deleted) return;
+    var it=occItem(t,d);
+    if(it.date>=from&&it.date<=to) out.push(it);
+  });
+  /* повторы, перенесённые в этот диапазон из других дней */
+  Object.keys(occ).forEach(function(d){
+    var o=occ[d];
+    if(seen[d]||o.deleted||!o.patch||!o.patch.date||o.patch.date<from||o.patch.date>to||!isSeriesDate(t,d)) return;
+    out.push(occItem(t,d));
+  });
+  return out;
+}
 function byTime(a,b){
   if(a.date!==b.date) return a.date<b.date?-1:1;
   var x=a.t.time||"",y=b.t.time||"";
@@ -129,13 +218,26 @@ function byTime(a,b){
   return prioRank(b.t)-prioRank(a.t)||String(a.t.title).localeCompare(String(b.t.title),"ru");
 }
 function itemsBetween(from,to){
-  return live().filter(function(t){return visible(t)&&t.date&&t.date>=from&&t.date<=to;})
-    .map(function(t){return item(t,t.date);}).sort(byTime);
+  var out=[];
+  live().forEach(function(t){
+    if(!t.date) return;
+    if(t.repeat) occurrencesIn(t,from,to).forEach(function(i){if(visible(i.t)) out.push(i);});
+    else if(visible(t)&&t.date>=from&&t.date<=to) out.push(item(t,t.date));
+  });
+  return out.sort(byTime);
 }
+/* в «Просрочено» от повторяющейся задачи — только последний пропущенный
+   повтор, иначе ежедневная привычка заполнила бы весь блок */
 function overdue(){
-  var t=today();
-  return live().filter(function(x){return visible(x)&&x.date&&x.date<t&&!x.done;})
-    .map(function(x){return item(x,x.date);}).sort(byTime);
+  var t=today(),y=addDays(t,-1),out=[];
+  live().forEach(function(x){
+    if(!x.date) return;
+    if(x.repeat){
+      var miss=occurrencesIn(x,addDays(t,-366),y).filter(function(i){return !i.done&&visible(i.t);}).sort(byTime);
+      if(miss.length) out.push(miss[miss.length-1]);
+    }else if(x.date<t&&!x.done&&visible(x)) out.push(item(x,x.date));
+  });
+  return out.sort(byTime);
 }
 function noDate(){
   return live().filter(function(t){return visible(t)&&!t.date;})
@@ -143,33 +245,109 @@ function noDate(){
 }
 function findItem(key){
   var p=String(key).split("|"),t=taskById(p[0]);
-  return t&&!t.deletedAt?item(t,p[1]||""):null;
+  if(!t||t.deletedAt) return null;
+  if(!t.repeat) return item(t,t.date);
+  var o=(t.occ||{})[p[1]];
+  return o&&o.deleted?null:occItem(t,p[1]);
 }
 
 /* ═════════ изменения ═════════ */
 function blankTask(o){
   var now=Date.now();
   return Object.assign({id:"",title:"",date:today(),time:"",end:"",kind:"",priority:"med",desc:"",done:false,
-    createdAt:now,updatedAt:now,deletedAt:0},o||{});
+    repeat:null,occ:{},createdAt:now,updatedAt:now,deletedAt:0},o||{});
 }
+function occOf(t,orig){t.occ=t.occ||{};return t.occ[orig]||(t.occ[orig]={});}
+/* выполнение повтора отмечает только его, остальные повторы не трогает */
 function toggleDone(key){
   var it=findItem(key); if(!it) return;
-  it.t.done=!it.t.done; putTask(it.t);
+  if(it.rec){var o=occOf(it.task,it.orig);o.done=!o.done;}
+  else it.task.done=!it.task.done;
+  putTask(it.task);
   render(); repaintPanel();
 }
 function moveToToday(keys){
-  var t=today();
-  keys.forEach(function(k){var it=findItem(k);if(it){it.t.date=t;putTask(it.t);}});
+  var d=today();
+  keys.forEach(function(k){
+    var it=findItem(k); if(!it) return;
+    if(it.rec){var o=occOf(it.task,it.orig);o.patch=Object.assign({},o.patch,{date:d});}
+    else it.task.date=d;
+    putTask(it.task);
+  });
   render();
   K.flash(keys.length>1?"Задачи перенесены на сегодня":"Задача перенесена на сегодня");
+}
+function softDelete(t){
+  t.deletedAt=Date.now(); putTask(t);
+  filesOf(t.id).forEach(function(f){f.deletedAt=Date.now();f.blob=null;saved(write("files",touch(f)));});
 }
 function removeTask(id){
   var t=taskById(id); if(!t) return;
   if(!confirm("Удалить задачу «"+t.title+"»?")) return;
-  t.deletedAt=Date.now(); putTask(t);
-  filesOf(id).forEach(function(f){f.deletedAt=Date.now();f.blob=null;saved(write("files",touch(f)));});
-  closePanel();
+  softDelete(t); hidePanel();
   K.flash("Задача удалена");
+}
+
+/* Правка и удаление повтора. scope: "one" — только этот повтор, "next" —
+   этот и следующие (серия делится на две), "all" — вся серия. */
+var OCC_FIELDS=["title","date","time","end","kind","priority","desc"];
+function splitSeries(t,orig){
+  var before=seriesDates(t,t.date,addDays(orig,-1)).length;
+  var nt=Object.assign({},t,{id:newId(),date:orig,occ:{},repeat:Object.assign({},t.repeat),createdAt:Date.now()});
+  Object.keys(t.occ||{}).forEach(function(d){if(d>=orig){nt.occ[d]=t.occ[d];delete t.occ[d];}});
+  if(t.repeat.end==="count") nt.repeat.count=Math.max(1,t.repeat.count-before);
+  t.repeat=Object.assign({},t.repeat,{end:"until",until:addDays(orig,-1)});
+  L.tasks.push(nt); putTask(t);
+  return nt;
+}
+function applyAll(t,orig,edits){
+  Object.keys(edits).forEach(function(f){
+    /* новая дата у всей серии — сдвиг её начала на ту же разницу дней */
+    if(f==="date"){if(edits.date) t.date=addDays(t.date,K.daysBetween(K.parseISO(orig),K.parseISO(edits.date)));}
+    else t[f]=edits[f];
+  });
+  if(!t.repeat) t.occ={};
+  putTask(t);
+}
+function applyEdits(t,orig,edits,scope){
+  if(edits.title!=null&&!edits.title.trim()) edits.title="Без названия";
+  if(scope==="one"){
+    var o=occOf(t,orig),p=Object.assign({},o.patch);
+    OCC_FIELDS.forEach(function(f){if(f in edits)p[f]=edits[f];});
+    o.patch=p; putTask(t);
+  }else applyAll(scope==="next"&&orig!==t.date?splitSeries(t,orig):t,orig,edits);
+  render();
+}
+function deleteOcc(t,orig,scope){
+  if(scope==="one"){occOf(t,orig).deleted=true;putTask(t);}
+  else if(scope==="next"&&orig!==t.date){
+    t.repeat=Object.assign({},t.repeat,{end:"until",until:addDays(orig,-1)});
+    Object.keys(t.occ||{}).forEach(function(d){if(d>=orig)delete t.occ[d];});
+    putTask(t);
+  }else softDelete(t);
+  render();
+}
+/* вопрос как в Google Календаре; «Отмена» и Escape возвращают null */
+function askScope(title,withOne){
+  return new Promise(function(res){
+    var box=document.createElement("div");
+    box.className="ldialog"; box.setAttribute("role","dialog"); box.setAttribute("aria-modal","true");
+    box.setAttribute("aria-label",title);
+    box.innerHTML='<div class="ldialog-box"><h3>'+esc(title)+"</h3>"+
+      (withOne?'<button class="btn ghost" data-sc="one">Только эту</button>':"")+
+      '<button class="btn ghost" data-sc="next">Эту и последующие</button>'+
+      '<button class="btn ghost" data-sc="all">Все</button>'+
+      '<button class="btn ghost cancel" data-sc="">Отмена</button></div>';
+    document.body.appendChild(box);
+    function done(v){box.remove();document.removeEventListener("keydown",onKey,true);res(v||null);}
+    function onKey(e){if(e.key==="Escape"){e.preventDefault();e.stopPropagation();done(null);}}
+    document.addEventListener("keydown",onKey,true);
+    box.addEventListener("click",function(e){
+      var b=e.target.closest("[data-sc]");
+      if(b) done(b.dataset.sc); else if(e.target===box) done(null);
+    });
+    $("button",box).focus();
+  });
 }
 
 /* ═════════ отрисовка ═════════ */
@@ -203,7 +381,8 @@ function rowHTML(it,od){
   var meta=(k?K.kindChip(k):"")+
     (pr==="high"||pr==="urgent"?'<span class="chip prio loud" style="--pc:'+K.prioVar(pr)+";--pcs:"+K.prioSoft(pr)+'">'+
       '<span class="pip"></span>'+(pr==="urgent"?"Срочно":"Высокий")+"</span>":"")+
-    (nf?'<span class="chip">'+ic("link")+nf+"</span>":"");
+    (nf?'<span class="chip">'+ic("link")+nf+"</span>":"")+
+    (it.rec?'<span class="chip" title="'+esc(repeatLabel(it.task.repeat,it.task.date))+'">'+ic("restore")+"повтор</span>":"");
   return '<div class="lrow'+(it.done?" done":"")+'" style="--pc:'+K.prioVar(pr)+'">'+
     '<button class="check" data-lcheck="'+esc(it.key)+'" role="checkbox" aria-checked="'+it.done+'" aria-label="Выполнено: '+esc(t.title)+'">'+
       K.CHECK_SVG+"</button>"+
@@ -351,17 +530,35 @@ document.body.appendChild(panel);
 var filePick=document.createElement("input");
 filePick.type="file"; filePick.hidden=true; document.body.appendChild(filePick);
 
-/* P.id — открытая задача; P.draft — новая, ещё не сохранённая: она
-   записывается, как только у неё появляется название */
-var P={id:null,date:"",draft:null},titleT=null;
-function cur(){return P.draft||taskById(P.id);}
+/* P.id и P.date — открытая задача и исходная дата её повтора. P.draft —
+   новая задача, ещё не сохранённая: она записывается при первом символе
+   названия. Если задача открыта уже повторяющейся (P.series), правки
+   копятся в P.edits, а при закрытии панели доска спрашивает: только этот
+   повтор, этот и следующие или все. Задача, которая стала повторяющейся
+   здесь же, в панели, правится напрямую — спрашивать не о чем. */
+var P={id:null,date:"",draft:null,edits:{},custom:false,series:false},titleT=null;
+function series(){var t=P.series&&!P.draft&&taskById(P.id);return t&&t.repeat?t:null;}
+function cur(){
+  if(P.draft) return P.draft;
+  var t=taskById(P.id); if(!t) return null;
+  return series()?Object.assign(occItem(t,P.date).t,P.edits):t;
+}
+/* изменение поля: у черновика — в нём, у повтора — в P.edits, иначе сразу запись */
+function edit(name,value){
+  if(P.draft){P.draft[name]=value;return;}
+  if(series()){P.edits[name]=value;return;}
+  var t=taskById(P.id); if(!t) return;
+  t[name]=value;
+  if(name==="date"||name==="repeat") P.date=t.date;
+  putTask(t);
+}
 function panelOpen(){return panel.classList.contains("on");}
 function openTask(key){
   var it=findItem(key); if(!it) return;
-  P={id:it.t.id,date:it.date,draft:null}; showPanel(false);
+  P={id:it.task.id,date:it.orig,draft:null,edits:{},custom:false,series:!!it.task.repeat}; showPanel(false);
 }
 function newTask(o){
-  P={id:null,date:"",draft:blankTask(o)}; showPanel(true);
+  P={id:null,date:"",draft:blankTask(o),edits:{},custom:false,series:false}; showPanel(true);
 }
 function showPanel(focusTitle){
   K.closeSheet(); K.closeSide();
@@ -378,53 +575,105 @@ function repaintPanel(){
   panel.innerHTML=panelHTML(); fitTitle();
   body=$(".d-body",panel); if(body) body.scrollTop=top;
 }
-/* новая задача записывается при первом символе названия */
 function commitDraft(){
   var d=P.draft; if(!d||!d.title.trim()) return;
   d.id=newId(); d.title=d.title.trim(); d.createdAt=Date.now();
   L.tasks.push(d); putTask(d);
-  P={id:d.id,date:d.date,draft:null};
+  P={id:d.id,date:d.date,draft:null,edits:{},custom:P.custom,series:false};
   render();
 }
 function flushTitle(){
   if(!titleT) return;
   clearTimeout(titleT.timer); var run=titleT.run; titleT=null; run();
 }
-function closePanel(){
+function hidePanel(){
+  panel.classList.remove("on"); K.scrim.classList.remove("on"); panel.setAttribute("aria-hidden","true");
+  P={id:null,date:"",draft:null,edits:{},custom:false,series:false};
+  render();
+}
+/* discard — закрыть без вопроса и без несохранённых правок повтора (смена режима) */
+function closePanel(discard){
   if(!panelOpen()) return false;
   flushTitle();
+  var s=series();
+  if(s&&Object.keys(P.edits).length&&!discard){
+    askScope("Изменить повторяющуюся задачу",!("repeat" in P.edits)).then(function(sc){
+      if(!sc) return;                    /* «Отмена» — остаёмся в панели */
+      applyEdits(s,P.date,P.edits,sc); hidePanel();
+    });
+    return true;
+  }
   var t=P.draft?null:taskById(P.id);
   if(t&&!t.title.trim()){t.title="Без названия";putTask(t);}
-  panel.classList.remove("on"); K.scrim.classList.remove("on"); panel.setAttribute("aria-hidden","true");
-  P={id:null,date:"",draft:null};
-  render();
+  hidePanel();
   return true;
 }
 function setField(name,value){
-  var t=cur(); if(!t) return;
-  t[name]=value;
-  if(name==="date") P.date=value;
-  if(!P.draft) putTask(t);
+  edit(name,value);
   render(); repaintPanel();
 }
+
+/* повтор: готовые варианты, свой интервал, дни недели и окончание */
+var REPEATS=[["none","Не повторять"],["day","Каждый день"],["week","Каждую неделю"],["2week","Каждые 2 недели"],
+  ["month","Каждый месяц"],["year","Каждый год"],["custom","Свой интервал…"]];
+function presetOf(r){
+  if(!r) return "none";
+  var n=+r.every||1;
+  if(n===1&&r.freq!=="week") return r.freq;
+  if(r.freq==="week"&&(n===1||n===2)) return n===1?"week":"2week";
+  return "custom";
+}
+function setRepeat(fn){
+  var t=cur(),r=Object.assign({freq:"week",every:1,days:[],end:"never",until:"",count:10},t.repeat||{});
+  if(!t.date) edit("date",today());
+  fn(r,cur().date||today());
+  if(r.freq!=="week") r.days=[];
+  else if(!r.days.length) r.days=[wdIdx(cur().date||today())];
+  setField("repeat",r);
+}
+function repeatHTML(t){
+  var r=t.repeat,preset=presetOf(r),custom=P.custom||preset==="custom",n=r?Math.max(1,+r.every||1):1;
+  var h='<select data-lrep="1" aria-label="Повтор">'+REPEATS.map(function(o){
+    return '<option value="'+o[0]+'"'+(o[0]===(custom&&r?"custom":preset)?" selected":"")+">"+o[1]+"</option>";}).join("")+"</select>";
+  if(!r) return h;
+  if(custom) h+='<div class="rep-row"><span>Каждые</span><input type="number" min="1" max="99" data-lrevery="1" value="'+n+'" aria-label="Интервал повтора">'+
+    '<select data-lrunit="1" aria-label="Единица интервала">'+[["day",plural(n,"день","дня","дней")],["week",plural(n,"неделю","недели","недель")],
+      ["month",plural(n,"месяц","месяца","месяцев")],["year",plural(n,"год","года","лет")]].map(function(u){
+      return '<option value="'+u[0]+'"'+(r.freq===u[0]?" selected":"")+">"+u[1]+"</option>";}).join("")+"</select></div>";
+  if(r.freq==="week") h+='<div class="wdays" role="group" aria-label="Дни недели">'+WEEKDAYS.map(function(w,i){
+    return '<button data-lwd="'+i+'" aria-pressed="'+((r.days||[]).indexOf(i)>=0)+'">'+w+"</button>";}).join("")+"</div>";
+  h+='<div class="rep-end"><span class="lbl">Окончание</span><div class="quick">'+
+      '<button data-lrend="never" aria-pressed="'+(r.end==="never")+'">Бессрочно</button>'+
+      '<button data-lrend="until" aria-pressed="'+(r.end==="until")+'">До даты</button>'+
+      '<button data-lrend="count" aria-pressed="'+(r.end==="count")+'">После N раз</button>'+
+      '<button data-lrq="1" title="Повторять месяц">Месяц</button>'+
+      '<button data-lrq="12" title="Повторять год">Год</button></div>'+
+    (r.end==="until"?'<div class="rep-row"><span>до</span><input type="date" data-lruntil="1" value="'+esc(r.until)+'" aria-label="Повторять до"></div>':"")+
+    (r.end==="count"?'<div class="rep-row"><span>всего</span><input type="number" min="1" max="999" data-lrcount="1" value="'+(+r.count||1)+
+      '" aria-label="Число повторений"><span>'+plural(+r.count||1,"раз","раза","раз")+"</span></div>":"")+
+    '</div><p class="hint">'+esc(repeatLabel(r,t.date||today()))+"</p>";
+  return h;
+}
 function panelHTML(){
-  var t=cur(),isNew=!!P.draft,allDay=!t.time,pr=t.priority||"med",fs=isNew?[]:filesOf(t.id),td=today(),tm=addDays(td,1);
-  var eyebrow=isNew?"Новая задача":t.date?(relDay(t.date)?relDay(t.date)+", ":"")+longDate(t.date):"Без даты";
+  var t=cur(),isNew=!!P.draft,s=series(),allDay=!t.time,pr=t.priority||"med",fs=isNew?[]:filesOf(t.id),td=today(),tm=addDays(td,1);
+  var eyebrow=isNew?"Новая задача":(s?"Повтор · ":"")+(t.date?(relDay(t.date)?relDay(t.date)+", ":"")+longDate(t.date):"Без даты");
   var body='<div class="d-body"><div class="d-title-row">'+
-      (isNew?"":'<button class="check" data-lpcheck="1" role="checkbox" aria-checked="'+!!t.done+'" style="margin-top:9px" aria-label="Выполнено">'+
-        K.CHECK_SVG+"</button>")+
+      (isNew?"":'<button class="check" data-lpcheck="1" role="checkbox" aria-checked="'+(findItem(P.id+"|"+P.date)||{done:!!t.done}).done+
+        '" style="margin-top:9px" aria-label="'+(s?"Выполнен этот повтор":"Выполнено")+'">'+K.CHECK_SVG+"</button>")+
       '<textarea class="d-title'+(t.done?" done":"")+'" data-lf="title" rows="1" maxlength="200" placeholder="Что нужно сделать?" aria-label="Название задачи">'+
         esc(t.title)+"</textarea></div>"+
+    (s&&Object.keys(P.edits).length?'<p class="hint rep-pending">Изменения повторяющейся задачи сохранятся по кнопке «Готово».</p>':"")+
     '<div class="fields">'+
       '<span class="lbl">Дата</span><div class="ctl"><input type="date" data-lf="date" value="'+esc(t.date)+'" aria-label="Дата">'+
         '<div class="quick"><button data-lq="'+td+'" aria-pressed="'+(t.date===td)+'">Сегодня</button>'+
         '<button data-lq="'+tm+'" aria-pressed="'+(t.date===tm)+'">Завтра</button>'+
-        '<button data-lq="" aria-pressed="'+!t.date+'">Без даты</button></div></div>'+
+        (t.repeat?"":'<button data-lq="" aria-pressed="'+!t.date+'">Без даты</button>')+"</div></div>"+
       '<span class="lbl">Время</span><div class="ctl">'+
         '<label class="switch"><input type="checkbox" data-lallday="1"'+(allDay?" checked":"")+"><span><b>Весь день</b></span></label>"+
         (allDay?"":'<div class="times"><input type="time" data-lf="time" value="'+esc(t.time)+'" aria-label="Начало">'+
           '<span>–</span><input type="time" data-lf="end" value="'+esc(t.end)+'" aria-label="Окончание, необязательно"></div>'+
           '<p class="hint">Окончание можно не указывать.</p>')+"</div>"+
+      '<span class="lbl">Повтор</span><div class="ctl">'+repeatHTML(t)+"</div>"+
       '<span class="lbl">Тип</span><div class="ctl"><div class="seg kinds">'+kindsAll().map(function(k){
           return '<button data-lkind="'+esc(k.id)+'" aria-pressed="'+(t.kind===k.id)+'" style="'+K.tint(k.color)+'">'+ic(k.icon)+esc(k.label)+"</button>";
         }).join("")+'<button class="add" data-lknew="1">'+ic("plus")+"Свой тип</button></div></div>"+
@@ -450,12 +699,41 @@ panel.addEventListener("click",function(e){
   var t=e.target,b,task=cur(); if(!task) return;
   if(t.closest("button")) flushTitle();
   if(t.closest("[data-dclose]")||t.closest("[data-lpdone]")){closePanel();return;}
-  if(t.closest("[data-lpcheck]")){toggleDone(task.id+"|"+P.date);return;}
+  if(t.closest("[data-lpcheck]")){toggleDone(P.id+"|"+P.date);return;}
   if((b=t.closest("[data-lq]"))){setField("date",b.dataset.lq);return;}
   if((b=t.closest("[data-lkind]"))){setField("kind",task.kind===b.dataset.lkind?"":b.dataset.lkind);return;}
   if((b=t.closest("[data-lknew]"))){editKind(b,null,function(id){setField("kind",id);});return;}
   if((b=t.closest("[data-lprio]"))){setField("priority",b.dataset.lprio);return;}
-  if(t.closest("[data-lpdel]")){removeTask(task.id);return;}
+  if((b=t.closest("[data-lwd]"))){
+    var i=+b.dataset.lwd;
+    setRepeat(function(r){
+      var d=(r.days||[]).slice(),at=d.indexOf(i);
+      if(at<0) d.push(i); else if(d.length>1) d.splice(at,1);
+      r.days=d.sort();
+    });
+    return;}
+  if((b=t.closest("[data-lrend]"))){
+    var end=b.dataset.lrend;
+    setRepeat(function(r,date){
+      r.end=end;
+      if(end==="until"&&(!r.until||r.until<date)) r.until=shiftMonths(date,1);
+      if(end==="count"&&!(+r.count>0)) r.count=10;
+    });
+    return;}
+  /* быстрые варианты окончания: повторять месяц или год от даты задачи */
+  if((b=t.closest("[data-lrq]"))){
+    var months=+b.dataset.lrq;
+    setRepeat(function(r,date){r.end="until";r.until=shiftMonths(date,months);});
+    return;}
+  if(t.closest("[data-lpdel]")){
+    var s=series();
+    if(!s){removeTask(task.id);return;}
+    askScope("Удалить повторяющуюся задачу",true).then(function(sc){
+      if(!sc) return;
+      deleteOcc(s,P.date,sc); hidePanel();
+      K.flash(sc==="one"?"Повтор удалён":"Повторы удалены");
+    });
+    return;}
   if(t.closest("[data-lfile]")){pickFile(task.id);return;}
   if((b=t.closest("[data-lfopen]"))){openFile(b.dataset.lfopen);return;}
   if((b=t.closest("[data-lfdel]"))) dropFile(b.dataset.lfdel);
@@ -463,35 +741,56 @@ panel.addEventListener("click",function(e){
 panel.addEventListener("change",function(e){
   var t=e.target,task=cur(); if(!task) return;
   if(t.matches("[data-lallday]")){
-    if(t.checked){task.end="";setField("time","");}
+    if(t.checked){edit("end","");setField("time","");}
     else setField("time",task.date===today()?hhmm(Math.min(23,new Date().getHours()+1)*60):"09:00");
     return;
   }
-  if(t.matches("[data-lf=date]")){setField("date",t.value||"");return;}
+  if(t.matches("[data-lf=date]")){
+    if(!t.value&&task.repeat){K.flash("У повторяющейся задачи должна быть дата");repaintPanel();return;}
+    setField("date",t.value||""); return;}
   if(t.matches("[data-lf=time]")){
-    if(!t.value){task.end="";setField("time","");return;}
-    if(task.end&&task.end<=t.value) task.end="";
+    if(!t.value){edit("end","");setField("time","");return;}
+    if(task.end&&task.end<=t.value) edit("end","");
     setField("time",t.value); return;
   }
   if(t.matches("[data-lf=end]")){
     if(t.value&&t.value<=task.time){K.flash("Окончание должно быть позже начала");repaintPanel();return;}
-    setField("end",t.value||"");
+    setField("end",t.value||""); return;
   }
+  if(t.matches("[data-lrep]")){
+    var v=t.value;
+    P.custom=v==="custom";
+    if(v==="none"){setField("repeat",null);return;}
+    if(v==="custom"){if(task.repeat) repaintPanel(); else setRepeat(function(){});return;}
+    setRepeat(function(r){r.freq=v==="2week"?"week":v;r.every=v==="2week"?2:1;});
+    return;
+  }
+  if(t.matches("[data-lrevery]")){var n=K.clamp(Math.round(+t.value||1),1,99);setRepeat(function(r){r.every=n;});return;}
+  if(t.matches("[data-lrunit]")){setRepeat(function(r){r.freq=t.value;});return;}
+  if(t.matches("[data-lruntil]")){
+    if(t.value&&t.value<task.date){K.flash("Дата окончания раньше начала повторов");repaintPanel();return;}
+    setRepeat(function(r){r.until=t.value;if(!t.value)r.end="never";});
+    return;
+  }
+  if(t.matches("[data-lrcount]")){var c=K.clamp(Math.round(+t.value||1),1,999);setRepeat(function(r){r.count=c;});}
 });
-/* название и описание сохраняются с небольшой задержкой, пока человек печатает */
+/* название и описание: у обычной задачи — запись с задержкой, пока
+   человек печатает; у повтора — в отложенные правки */
 panel.addEventListener("input",function(e){
   var t=e.target,task=cur(),f=t.dataset&&t.dataset.lf; if(!task||(f!=="title"&&f!=="desc")) return;
   if(f==="title") fitTitle();
-  task[f]=t.value;
   if(P.draft){
+    P.draft[f]=t.value;
     if(f!=="title"||!t.value.trim()) return;
     /* задача сохранена: панель получает флажок и «Удалить», курсор остаётся в названии */
     commitDraft(); repaintPanel();
     var ta=$("[data-lf=title]",panel); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     return;
   }
+  if(series()){P.edits[f]=t.value;return;}
+  var rec=taskById(P.id); rec[f]=t.value;
   if(titleT) clearTimeout(titleT.timer);
-  titleT={run:function(){putTask(task);render();}};
+  titleT={run:function(){putTask(rec);render();}};
   titleT.timer=setTimeout(flushTitle,400);
 });
 panel.addEventListener("keydown",function(e){
@@ -730,7 +1029,7 @@ window.GridLife={
     }
     render();
   },
-  close:function(){closePanel();},
+  close:function(){closePanel(true);},
   escape:function(){return closePanel();},
   sideHTML:sideHTML,
   settingsHTML:settingsHTML

@@ -973,7 +973,7 @@ function initials(name){
 }
 function fmtSize(n){
   n=Number(n)||0;
-  return n<1024?n+" Б":n<1048576?(n/1024).toFixed(0)+" КБ":(n/1048576).toFixed(1)+" МБ";
+  return n<1024?n+" Б":n<1048576?(n/1024).toFixed(0)+" КБ":(n/1048576).toFixed(1).replace(/\.0$/,"")+" МБ";
 }
 function fmtWhen(ts){
   if(!ts) return "";
@@ -1606,7 +1606,8 @@ function removeNote(id){
 }
 
 /* ═════════ файлы ═════════ */
-var BUCKET="grid-files",DEMO_MAX=400*1024;
+/* предел одного файла; тот же предел стоит у хранилища в supabase-schema.sql */
+var BUCKET="grid-files",FILE_MAX=10*1024*1024,DEMO_MAX=400*1024;
 function pickFile(cardId){
   filePick.value="";
   filePick.onchange=function(){
@@ -1614,7 +1615,40 @@ function pickFile(cardId){
   };
   filePick.click();
 }
-function uploadFile(f,cardId){
+/* Фото перед загрузкой уменьшаются до 2560 px по длинной стороне и
+   пересохраняются в JPEG. Если сжатие не помогло, остаётся оригинал. */
+var PHOTO=/^image\/(jpeg|heic|heif|webp)$/i,PHOTO_SIDE=2560;
+function shrinkPhoto(f){
+  var photo=PHOTO.test(f.type)||f.type==="image/png"&&f.size>2*1024*1024;
+  if(!photo) return Promise.resolve(f);
+  return new Promise(function(res){
+    var url=URL.createObjectURL(f),img=new Image();
+    img.onload=function(){
+      var k=Math.min(1,PHOTO_SIDE/Math.max(img.naturalWidth,img.naturalHeight)),c=document.createElement("canvas");
+      c.width=Math.round(img.naturalWidth*k); c.height=Math.round(img.naturalHeight*k);
+      var g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,c.width,c.height);
+      g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+      c.toBlob(function(b){
+        res(b&&b.size<f.size?new File([b],f.name.replace(/\.(jpe?g|heic|heif|webp|png)$/i,"")+".jpg",{type:"image/jpeg"}):f);
+      },"image/jpeg",0.82);
+    };
+    img.onerror=function(){URL.revokeObjectURL(url);res(f);};   /* браузер не умеет этот формат — грузим как есть */
+    img.src=url;
+  });
+}
+function uploadFile(raw,cardId){
+  var limit=S.store.kind==="supabase"?FILE_MAX:DEMO_MAX;
+  shrinkPhoto(raw).then(function(f){
+    if(f.size>limit){
+      flash("«"+raw.name+"» — "+fmtSize(f.size)+(f!==raw?" даже после сжатия":"")+". Можно прикрепить файл до "+fmtSize(limit)+
+        (S.store.kind==="supabase"?".":" в демо-режиме — подключите базу для файлов до "+fmtSize(FILE_MAX)+"."));
+      return;
+    }
+    if(f!==raw) flash("Фото сжато: "+fmtSize(raw.size)+" → "+fmtSize(f.size));
+    storeFile(f,cardId);
+  });
+}
+function storeFile(f,cardId){
   var id=uid("f");
   var meta={projectId:S.project,cardId:cardId||"",name:f.name,size:f.size,
     mime:f.type||"application/octet-stream",path:"",createdAt:Date.now()};
@@ -1630,10 +1664,6 @@ function uploadFile(f,cardId){
       renderDrawer(true); renderMain();
     });
   }else{
-    if(f.size>DEMO_MAX){
-      flash("В демо-режиме файл до "+fmtSize(DEMO_MAX)+". Подключите базу для больших файлов.");
-      return;
-    }
     var fr=new FileReader();
     fr.onload=function(){
       meta.data=fr.result;

@@ -136,9 +136,10 @@ end $$;
 
 -- ── Хранилище файлов ───────────────────────────────────────
 -- Приватный бакет: ссылки на скачивание выдаются на 2 минуты.
-insert into storage.buckets (id, name, public)
-  values ('grid-files', 'grid-files', false)
-  on conflict (id) do nothing;
+-- Один файл — не больше 10 МБ (тот же предел проверяет интерфейс).
+insert into storage.buckets (id, name, public, file_size_limit)
+  values ('grid-files', 'grid-files', false, 10485760)
+  on conflict (id) do update set file_size_limit = excluded.file_size_limit;
 
 drop policy if exists grid_files_read   on storage.objects;
 drop policy if exists grid_files_insert on storage.objects;

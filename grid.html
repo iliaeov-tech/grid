@@ -8,8 +8,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="grid.config.js"></script>
+<script>
+/* режим ставим до отрисовки, чтобы не мелькал акцент другого режима;
+   ссылка на задачу (#task=…) всегда ведёт в рабочий режим */
+(function(){var m="work";
+  try{m=localStorage.getItem("grid.mode")==="life"&&!/^#task=/.test(location.hash)?"life":"work";}catch(e){}
+  document.documentElement.dataset.mode=m;})();
+</script>
 <style>
 /* ───────────────── светлая пастельная тема ───────────────── */
 :root{
@@ -24,9 +30,10 @@
   --line:#E5E8F1;
   --line-2:#D2D7E6;
 
-  --accent:#00937F;            /* фирменный цвет логотипа — не меняем */
-  --accent-hov:#007D6C;
-  --accent-soft:#DDF1ED;
+  /* акцент режима: Grid Work — красный, Grid Life — зелёный (ниже) */
+  --accent:#C8302A;
+  --accent-hov:#A82720;
+  --accent-soft:#FCE8E6;
   --accent-ink:#FFFFFF;
 
   --p-low:#7B8AAD;    --p-low-soft:#EAEEF7;
@@ -64,6 +71,14 @@
   --f-mono:"JetBrains Mono","Cascadia Mono",ui-monospace,monospace;
 }
 
+:root[data-mode="life"]{--accent:#167A38;--accent-hov:#12652E;--accent-soft:#E6F4EA}
+/* зарегистрированные цвета плавно перетекают при смене режима */
+@property --accent{syntax:"<color>";inherits:true;initial-value:#C8302A}
+@property --accent-hov{syntax:"<color>";inherits:true;initial-value:#A82720}
+@property --accent-soft{syntax:"<color>";inherits:true;initial-value:#FCE8E6}
+:root{transition:--accent .3s,--accent-hov .3s,--accent-soft .3s}
+:root[data-mode="life"] .work-only,:root[data-mode="work"] .life-only{display:none !important}
+
 *,*::before,*::after{box-sizing:border-box}
 [hidden]{display:none !important}
 img{max-width:100%}
@@ -87,7 +102,19 @@ button{cursor:pointer;background:none;border:none;padding:0}
 .mark:hover{border-color:var(--line-2);background:var(--ground)}
 .mark::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}
 .rail-sep{width:1px;height:22px;background:var(--line-2);flex:none}
-#btnSide{margin-right:-8px}
+.brand{display:flex;align-items:center;gap:4px;flex:none}
+/* переключатель режимов в духе iPhone: слева Work, справа Life */
+.mode-switch{position:relative;width:50px;height:28px;border-radius:99px;flex:none;margin-left:2px;
+  background:var(--accent);box-shadow:inset 0 0 0 1px rgba(33,38,57,.06)}
+.mode-switch::before{content:"";position:absolute;inset:-8px -4px}
+.mode-switch .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgba(33,38,57,.3);display:grid;place-items:center;color:var(--accent);
+  transition:transform .25s cubic-bezier(.32,.72,.3,1)}
+:root[data-mode="life"] .mode-switch .knob{transform:translateX(22px)}
+.mode-switch svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round}
+.mode-in{animation:modeIn .24s cubic-bezier(.32,.72,.3,1)}
+@keyframes modeIn{from{opacity:0;transform:translateY(6px)}}
 
 .b-title{font-size:16px;font-weight:600;letter-spacing:-.01em;padding:3px 8px;
   border-radius:var(--r-s);border:1px solid transparent;max-width:30ch;
@@ -668,8 +695,10 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
   font-size:13px;box-shadow:var(--sh-2);max-width:80vw}
 
 /* ───────────────── вход ───────────────── */
-.gate{position:fixed;inset:0;z-index:80;background:var(--ground);
-  display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto}
+/* экран входа лежит под шапкой: переключатель режимов остаётся доступен */
+.gate{position:fixed;inset:0;z-index:25;background:var(--ground);
+  display:flex;align-items:center;justify-content:center;padding:84px 24px 24px;overflow-y:auto}
+.gated .rail .work-only,:root[data-mode="work"] .gated #btnSide{display:none}
 .gate-box{width:100%;max-width:392px;background:var(--surface);border:1px solid var(--line);
   border-radius:18px;box-shadow:var(--sh-2);padding:26px}
 .gate-mark{font-family:var(--f-dis);font-weight:600;font-size:19px;color:var(--accent);
@@ -696,6 +725,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 /* ───────────────── узкий экран ───────────────── */
 @media (max-width:640px){
   .rail{gap:9px;padding:9px 12px}
+  .brand+.rail-sep{display:none}
   .rail-right{gap:7px}
   .search input{width:150px}
   select.pick{max-width:150px}
@@ -732,15 +762,18 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 
 <div class="app">
   <header class="rail">
-    <button class="icon-btn" id="btnSide" title="Проекты" aria-label="Проекты" aria-controls="side" aria-expanded="false">
-      <svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"></rect><path d="M9.5 4v16"></path><path d="M13.5 10l2 2-2 2"></path></svg>
-    </button>
-    <button class="mark" id="btnProjects" title="Все проекты" aria-controls="side" aria-expanded="false">Grid</button>
-    <span class="rail-sep"></span>
-    <button class="b-title" id="boardTitle" title="Переименовать проект">Проект</button>
-    <div class="tally" id="tally"></div>
+    <div class="brand">
+      <button class="icon-btn" id="btnSide" title="Боковая панель" aria-label="Боковая панель" aria-controls="side" aria-expanded="false">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"></rect><path d="M9.5 4v16"></path><path d="M13.5 10l2 2-2 2"></path></svg>
+      </button>
+      <button class="mark" id="btnProjects" aria-controls="side" aria-expanded="false"><span>Grid</span><span id="modeName">Work</span></button>
+      <button class="mode-switch" id="modeSwitch" role="switch" aria-checked="false" aria-label="Личный режим Grid Life"><span class="knob"></span></button>
+    </div>
+    <span class="rail-sep work-only"></span>
+    <button class="b-title work-only" id="boardTitle" title="Переименовать проект">Проект</button>
+    <div class="tally work-only" id="tally"></div>
 
-    <div class="rail-right">
+    <div class="rail-right work-only">
       <div class="here" id="here" hidden>
         <span class="here-lbl">на доске</span>
         <div class="stack" id="stack"></div>
@@ -760,13 +793,14 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
     </div>
   </header>
 
-  <div class="notice" id="notice" hidden></div>
+  <div class="notice work-only" id="notice" hidden></div>
 
-  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <nav class="tabs work-only" id="tabs" role="tablist"></nav>
 
-  <main class="main" id="main">
+  <main class="main work-only" id="main">
     <div class="skeleton"><span class="spin"></span>Подключаемся к доске…</div>
   </main>
+  <main class="main life-only" id="lifeMain"></main>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -774,7 +808,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 <aside class="side" id="side" aria-hidden="true" aria-label="Проекты"></aside>
 <aside class="drawer" id="settings" aria-hidden="true" aria-label="Настройки"></aside>
 <aside class="drawer" id="drawer" aria-hidden="true" aria-label="Детали задачи"></aside>
-<div class="gate" id="gate" hidden></div>
+<div class="gate work-only" id="gate" hidden></div>
 <input type="file" id="filePick" hidden>
 
 <script>
@@ -849,6 +883,8 @@ var ICONS={
   chevL:'<path d="M15 6l-6 6 6 6"></path>',
   down:'<path d="M12 5v14M6 13l6 6 6-6"></path>',
   tick:'<path d="M5 12.5l4.5 4.5L19 7"></path>',
+  briefcase:'<rect x="3.5" y="7" width="17" height="12.5" rx="2"></rect><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3.5 12.5h17"></path>',
+  leaf:'<path d="M5 19.5C5 11 10 6 19.5 4.5 19.5 14 14 19.5 5 19.5z"></path><path d="M5 19.5l8.5-8.5"></path>',
   gear:'<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path>',
   download:'<path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path>',
   folder:'<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"></path>',
@@ -2291,7 +2327,7 @@ function sideOpen(){return sideEl.classList.contains("on");}
 /* перерисовка открытой панели; поле нового проекта во время ввода не трогаем */
 function renderSide(){
   if(!sideOpen()||sideEl.contains(document.activeElement)&&document.activeElement.tagName==="INPUT") return;
-  sideEl.innerHTML=sideHTML();
+  sideEl.innerHTML=isWork()?sideHTML():GridLife.sideHTML();
 }
 function setSideState(on){
   sideEl.classList.toggle("on",on); sideScrim.classList.toggle("on",on);
@@ -2300,8 +2336,8 @@ function setSideState(on){
 }
 function openSide(){
   closeSheet(); closeDrawer();
-  sideEl.innerHTML=sideHTML(); setSideState(true);
-  var cur=$(".prow.on .pick",sideEl)||$(".pick",sideEl)||$("[data-pnew]",sideEl);
+  sideEl.innerHTML=isWork()?sideHTML():GridLife.sideHTML(); setSideState(true);
+  var cur=$(".prow.on .pick,[aria-current]",sideEl)||$(".pick,.side-body button",sideEl)||$("[data-pnew]",sideEl);
   if(cur) cur.focus();
 }
 function closeSide(){
@@ -2316,10 +2352,11 @@ function createProject(input){
 sideEl.addEventListener("click",function(e){
   var t=e.target,x;
   if(t.closest("[data-sclose]")){closeSide();return;}
+  if(t.closest("[data-settings]")){openSettings();return;}
+  if(!isWork()) return;                       /* остальное в Life обрабатывает life.js */
   if((x=t.closest("[data-pdel]"))){removeProject(x.dataset.pdel);renderSide();return;}
   if(t.closest("[data-padd]")){createProject($("[data-pnew]",sideEl));return;}
-  if((x=t.closest("[data-p]"))){closeSide();if(x.dataset.p!==S.project)switchProject(x.dataset.p);return;}
-  if(t.closest("[data-settings]")) openSettings();
+  if((x=t.closest("[data-p]"))){closeSide();if(x.dataset.p!==S.project)switchProject(x.dataset.p);}
 });
 sideEl.addEventListener("keydown",function(e){
   if(e.key==="Enter"&&e.target.matches("[data-pnew]")){e.preventDefault();createProject(e.target);}
@@ -2554,8 +2591,9 @@ function downloadICS(c){
 }
 /* ссылка grid.html#task=ID (из события в календаре) открывает задачу */
 function openFromHash(){
-  var m=/^#task=(.+)$/.exec(location.hash),c=m&&card(decodeURIComponent(m[1]));
-  if(!c) return;
+  var m=/^#task=(.+)$/.exec(location.hash); if(!m) return;
+  if(!isWork()) setMode("work");          /* задача из доски открывается только в рабочем режиме */
+  var c=card(decodeURIComponent(m[1])); if(!c) return;
   history.replaceState(null,"",location.pathname+location.search);
   if(c.projectId!==S.project) switchProject(c.projectId);
   openCard(c.id);
@@ -2608,10 +2646,11 @@ function settingsHTML(){
     block+"</section></div>";
 }
 function settingsOpen(){return settingsEl.classList.contains("on");}
-function renderSettings(){if(settingsOpen()) settingsEl.innerHTML=settingsHTML();}
+function settingsContent(){return isWork()?settingsHTML():GridLife.settingsHTML();}
+function renderSettings(){if(settingsOpen()) settingsEl.innerHTML=settingsContent();}
 function openSettings(){
   closeSide(); closeDrawer(); closeSheet();
-  settingsEl.innerHTML=settingsHTML();
+  settingsEl.innerHTML=settingsContent();
   settingsEl.classList.add("on"); scrimEl.classList.add("on"); settingsEl.setAttribute("aria-hidden","false");
   var b=$("[data-dclose]",settingsEl); if(b) b.focus();
 }
@@ -2631,6 +2670,7 @@ function dropFeed(f){
 settingsEl.addEventListener("click",function(e){
   var t=e.target,f=myFeed(),b;
   if(t.closest("[data-dclose]")){closeSettings();return;}
+  if(!isWork()) return;
   if((b=t.closest("[data-setme]"))){openSheet(b,membersHTML(true),function(el){wireMembers(el,true);});return;}
   if(t.closest("[data-feedcopy]")){
     var inp=$("[data-feedurl]",settingsEl);
@@ -2647,7 +2687,7 @@ settingsEl.addEventListener("click",function(e){
   }
 });
 settingsEl.addEventListener("change",function(e){
-  if(e.target.name!=="feedScope") return;
+  if(!isWork()||e.target.name!=="feedScope") return;
   var f=myFeed();
   if(f){f.scope=e.target.value;w(S.store.update("feeds",f.id,{scope:f.scope}));}
   else S.feedScope=e.target.value;
@@ -2899,7 +2939,7 @@ drawerEl.addEventListener("focusout",function(){setTimeout(function(){renderDraw
 scrimEl.addEventListener("click",function(){closeDrawer();closeSettings();});
 document.addEventListener("keydown",function(e){
   if(e.key!=="Escape") return;
-  if(sheetEl) closeSheet(); else if(sideOpen()) closeSide();
+  if(sheetEl) closeSheet(); else if(sideOpen()) closeSide(); else if(!isWork()&&GridLife.escape()) return;
   else if(settingsOpen()) closeSettings(); else if(S.open||S.openNote) closeDrawer();
 });
 
@@ -2996,15 +3036,15 @@ if(!CFG){try{var raw=localStorage.getItem("grid.cfg");
   if(raw){var o=JSON.parse(raw);if(o&&o.url&&o.anonKey)CFG=o;}}catch(e){}}
 var AUTH=(CFG&&CFG.auth)||"google";
 
-function hideGate(){gateEl.hidden=true;gateEl.innerHTML="";}
+function hideGate(){gateEl.hidden=true;gateEl.innerHTML="";document.body.classList.remove("gated");}
 function showGate(html,wire){
-  gateEl.hidden=false;
+  gateEl.hidden=false; document.body.classList.add("gated");
   gateEl.innerHTML='<div class="gate-box">'+html+"</div>";
   if(wire) wire(gateEl);
 }
 function demoMode(){hideGate();attach(localStore());}
 function setupScreen(msg){
-  showGate('<div class="gate-mark">Grid</div><h1>Подключите базу</h1>'+
+  showGate('<div class="gate-mark">Grid Work</div><h1>Подключите базу</h1>'+
     "<p>Доски хранятся в Supabase. Вставьте адрес проекта и публичный ключ <code>anon</code> — они лежат в Supabase в разделе Project&nbsp;Settings → API.</p>"+
     (msg?'<div class="msg bad">'+esc(msg)+"</div>":"")+
     '<div class="fld"><label for="gu">Project URL</label><input id="gu" placeholder="https://xxxx.supabase.co" autocomplete="off" spellcheck="false"></div>'+
@@ -3026,7 +3066,7 @@ function setupScreen(msg){
 function signInScreen(sb,msg,kind){
   var provider=(AUTH==="github")?"github":"google";
   var pname=(provider==="github")?"GitHub":"Google";
-  var body='<div class="gate-mark">Grid</div><h1>Вход на доску</h1>'+
+  var body='<div class="gate-mark">Grid Work</div><h1>Вход на доску</h1>'+
     "<p>Доски общие для команды — войдите, чтобы видеть задачи и сохранять изменения.</p>"+
     (msg?'<div class="msg '+(kind||"bad")+'">'+esc(msg)+"</div>":"");
   if(AUTH==="email"){
@@ -3062,10 +3102,9 @@ function start(sb){
   var st=supaStore(sb);
   attach(st); wireRealtime(sb,st);
 }
-(function boot(){
-  if(!CFG){setupScreen();return;}
+function boot(){
   if(!window.supabase||!window.supabase.createClient){
-    showGate('<div class="gate-mark">Grid</div><h1>Библиотека не загрузилась</h1>'+
+    showGate('<div class="gate-mark">Grid Work</div><h1>Библиотека не загрузилась</h1>'+
       "<p>Не удалось получить supabase-js с CDN. Проверьте соединение и обновите страницу.</p>"+
       '<button class="btn ghost" id="gdemo">Посмотреть демо</button>',
       function(el){$("#gdemo",el).addEventListener("click",demoMode);});
@@ -3082,8 +3121,55 @@ function start(sb){
   sb.auth.getSession().then(function(r){
     if(r&&r.data&&r.data.session) start(sb); else signInScreen(sb);
   }).catch(function(){signInScreen(sb);});
-})();
+}
+/* Рабочая часть запускается при первом входе в Grid Work: библиотеку
+   Supabase грузим только тогда, и Grid Life не зависит ни от сети, ни от входа. */
+var workBooted=false;
+function bootWork(){
+  if(workBooted) return; workBooted=true;
+  if(!CFG){setupScreen();return;}
+  var sc=document.createElement("script");
+  sc.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js";
+  sc.onload=sc.onerror=boot;
+  document.head.appendChild(sc);
+}
+
+/* ═════════ режимы: Grid Work и Grid Life ═════════ */
+var root=document.documentElement,lifeMain=$("#lifeMain");
+function isWork(){return root.dataset.mode!=="life";}
+function setMode(m){
+  var changed=root.dataset.mode!==m,life=m==="life";
+  closeSheet(); closeSide(); closeSettings(); closeDrawer(); GridLife.close();
+  root.dataset.mode=m;
+  try{localStorage.setItem("grid.mode",m);}catch(e){}
+  document.title=life?"Grid Life":"Grid Work";
+  $("#modeName").textContent=life?"Life":"Work";
+  var sw=$("#modeSwitch");
+  sw.setAttribute("aria-checked",String(life));
+  sw.title=life?"Перейти в Grid Work":"Перейти в Grid Life";
+  $(".knob",sw).innerHTML=ic(life?"leaf":"briefcase");
+  [$("#btnSide"),$("#btnProjects")].forEach(function(b){b.title=life?"Календарь и типы задач":"Проекты";});
+  $("#btnSide").setAttribute("aria-label",life?"Календарь и типы задач":"Проекты");
+  sideEl.setAttribute("aria-label",life?"Grid Life":"Проекты");
+  if(life) GridLife.show(lifeMain); else bootWork();
+  if(changed){
+    var shown=life?lifeMain:mainEl;
+    shown.classList.remove("mode-in"); void shown.offsetWidth; shown.classList.add("mode-in");
+  }
+}
+$("#modeSwitch").addEventListener("click",function(){setMode(isWork()?"life":"work");});
+
+/* общие помощники для life.js */
+window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHOICES:ICON_CHOICES,
+  TINTS:TINTS,tint:tint,PRIOS:PRIOS,prioVar:prioVar,prioSoft:prioSoft,MONTHS:MONTHS,MONTHS_FULL:MONTHS_FULL,
+  WEEK:WEEK,iso:iso,parseISO:parseISO,todayISO:todayISO,shortDate:shortDate,daysBetween:daysBetween,
+  fmtSize:fmtSize,fmtWhen:fmtWhen,flash:flash,openSheet:openSheet,closeSheet:closeSheet,menuHTML:menuHTML,
+  drawerHead:drawerHead,X_BTN:X_BTN,CHECK_SVG:CHECK_SVG,closeSide:closeSide,openSettings:openSettings,
+  renderSide:renderSide,renderSettings:renderSettings,scrim:scrimEl};
+/* life.js подключается следующим скриптом, поэтому стартуем, когда он загружен */
+document.addEventListener("DOMContentLoaded",function(){setMode(root.dataset.mode);});
 })();
 </script>
+<script src="life.js"></script>
 </body>
 </html>

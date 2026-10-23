@@ -592,7 +592,31 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .side-add input{flex:1;min-width:0;padding:8px 10px;border-radius:var(--r-s);border:1px solid var(--line-2);
   background:var(--surface);outline:none}
 .side-add input:focus{border-color:var(--accent)}
-.side-foot{padding:10px;border-top:1px solid var(--line)}
+.side-foot{padding:6px;border-top:1px solid var(--line)}
+
+/* ───────────────── настройки ───────────────── */
+.set{display:flex;flex-direction:column;gap:12px;font-size:13.5px;line-height:1.55}
+.set p{margin:0;color:var(--ink-2)}
+.set p.small{font-size:12.5px;color:var(--ink-3)}
+.choice{display:flex;flex-direction:column;gap:6px}
+.choice label{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-radius:var(--r-m);
+  border:1px solid var(--line-2);cursor:pointer}
+.choice label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.choice input{margin:3px 0 0;accent-color:var(--accent)}
+.choice small{display:block;color:var(--ink-3);font-size:12px}
+.feed{display:flex;gap:6px}
+.feed input{flex:1;min-width:0;padding:8px 10px;border-radius:var(--r-s);border:1px solid var(--line-2);
+  background:var(--surface-2);font-family:var(--f-mono);font-size:12px;color:var(--ink-2)}
+.steps{border:1px solid var(--line);border-radius:var(--r-m);padding:2px 12px}
+.steps summary{cursor:pointer;padding:8px 0;font-weight:500}
+.steps ol{margin:0 0 10px;padding-left:20px;color:var(--ink-2)}
+.set .row{display:flex;gap:8px;flex-wrap:wrap}
+.set .btn.ghost{border:1px solid var(--line-2)}
+.cal-add{display:flex;gap:6px;flex-wrap:wrap}
+.cal-add .btn{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;font-size:12px;
+  border:1px solid var(--line-2);text-decoration:none}
+.cal-add .btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
 /* выбор цвета и иконки */
 .tints{display:flex;flex-wrap:wrap;gap:4px}
 .tint{width:27px;height:27px;border-radius:50%;border:2px solid transparent;display:grid;place-items:center}
@@ -748,6 +772,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 <div class="scrim" id="scrim"></div>
 <div class="scrim" id="sideScrim"></div>
 <aside class="side" id="side" aria-hidden="true" aria-label="Проекты"></aside>
+<aside class="drawer" id="settings" aria-hidden="true" aria-label="Настройки"></aside>
 <aside class="drawer" id="drawer" aria-hidden="true" aria-label="Детали задачи"></aside>
 <div class="gate" id="gate" hidden></div>
 <input type="file" id="filePick" hidden>
@@ -824,6 +849,8 @@ var ICONS={
   chevL:'<path d="M15 6l-6 6 6 6"></path>',
   down:'<path d="M12 5v14M6 13l6 6 6-6"></path>',
   tick:'<path d="M5 12.5l4.5 4.5L19 7"></path>',
+  gear:'<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path>',
+  download:'<path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path>',
   folder:'<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"></path>',
   copy:'<rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>',
   sort:'<path d="M7 4v16M3.5 16.5L7 20l3.5-3.5M17 20V4M13.5 7.5L17 4l3.5 3.5"></path>',
@@ -891,7 +918,7 @@ function fmtWhen(ts){
 
 /* ═════════ состояние ═════════ */
 var S={store:null,sb:null,chan:null,mode:"boot",started:false,
-  projects:[],columns:[],cards:[],members:[],comments:[],files:[],notes:[],statuses:[],kinds:[],
+  projects:[],columns:[],cards:[],members:[],comments:[],files:[],notes:[],statuses:[],kinds:[],feeds:[],
   project:null,tab:"board",me:null,open:null,openNote:null,peers:[],
   filter:{q:"",assignee:"all",priority:"all",hideDone:false},
   composer:null,composerText:"",renaming:null,expanded:{},
@@ -975,7 +1002,7 @@ function flash(msg){
 }
 
 /* ═════════ хранилище ═════════ */
-var COLLS=["projects","columns","cards","members","comments","files","notes","statuses","kinds"];
+var COLLS=["projects","columns","cards","members","comments","files","notes","statuses","kinds","feeds"];
 /* поле в браузере → колонка таблицы с тем же именем, что и коллекция */
 var MAP={
   projects:{name:"name",order:"pos"},
@@ -992,7 +1019,8 @@ var MAP={
   files:{projectId:"project_id",cardId:"card_id",name:"name",size:"size",mime:"mime",
          path:"path",createdAt:"created_at"},
   notes:{projectId:"project_id",title:"title",body:"body",color:"color",kind:"kind",
-         order:"pos",createdAt:"created_at",updatedAt:"updated_at"}
+         order:"pos",createdAt:"created_at",updatedAt:"updated_at"},
+  feeds:{memberId:"member_id",scope:"scope",createdAt:"created_at"}
 };
 var NUM={order:1,size:1},TIME={createdAt:1,updatedAt:1,archivedAt:1},
     /* ссылки и даты: пустая строка в базе — null */
@@ -1887,7 +1915,7 @@ function renderMain(){
   var comp=$("[data-comp]",mainEl);
   if(comp&&document.activeElement!==comp){comp.focus();comp.setSelectionRange(comp.value.length,comp.value.length);}
 }
-function renderAll(){renderMain();if(S.open||S.openNote)renderDrawer();renderSide();renderPresence();}
+function renderAll(){renderMain();if(S.open||S.openNote)renderDrawer();renderSide();renderSettings();renderPresence();}
 
 /* ═════════ панель задачи и заметки ═════════ */
 var X_BTN='<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"></path></svg>';
@@ -1944,6 +1972,9 @@ function cardDrawerHTML(c){
       '<label class="dt"><span>Дедлайн</span>'+
         '<input type="date" data-ddue="1" value="'+esc(c.due||"")+'" aria-label="Дедлайн"></label>'+
     "</div></div>"+
+    (c.due||c.start?'<span class="lbl">В календарь</span><div class="ctl cal-add">'+
+      '<a class="btn ghost" href="'+esc(googleLink(c))+'" target="_blank" rel="noopener">'+ic("calendar")+"Google Календарь</a>"+
+      '<button class="btn ghost" data-dics="1" title="Для Outlook, Apple Календаря и других">'+ic("download")+"Файл .ics</button></div>":"")+
   "</div>";
 
   if(!parent){
@@ -2253,7 +2284,8 @@ function sideHTML(){
           X_BTN+"</button></div>";
     }).join("")+"</div>"+
     '<div class="side-add"><input data-pnew="1" placeholder="Новый проект" aria-label="Название нового проекта">'+
-      '<button class="btn" data-padd="1" aria-label="Создать проект">+</button></div>';
+      '<button class="btn" data-padd="1" aria-label="Создать проект">+</button></div>'+
+    '<div class="side-foot"><button class="mi" data-settings="1">'+ic("gear")+"<span>Настройки</span></button></div>";
 }
 function sideOpen(){return sideEl.classList.contains("on");}
 /* перерисовка открытой панели; поле нового проекта во время ввода не трогаем */
@@ -2286,7 +2318,8 @@ sideEl.addEventListener("click",function(e){
   if(t.closest("[data-sclose]")){closeSide();return;}
   if((x=t.closest("[data-pdel]"))){removeProject(x.dataset.pdel);renderSide();return;}
   if(t.closest("[data-padd]")){createProject($("[data-pnew]",sideEl));return;}
-  if((x=t.closest("[data-p]"))){closeSide();if(x.dataset.p!==S.project)switchProject(x.dataset.p);}
+  if((x=t.closest("[data-p]"))){closeSide();if(x.dataset.p!==S.project)switchProject(x.dataset.p);return;}
+  if(t.closest("[data-settings]")) openSettings();
 });
 sideEl.addEventListener("keydown",function(e){
   if(e.key==="Enter"&&e.target.matches("[data-pnew]")){e.preventDefault();createProject(e.target);}
@@ -2322,10 +2355,10 @@ function wireMembers(el,pick){
       if(i&&i.value.trim()){addMember(i.value);renderAll();reopenMembers();}return;}
     if(t.closest("[data-signout]")){closeSheet();if(S.sb)S.sb.auth.signOut();return;}
     if(t.closest("[data-mnone]")){S.me=null;try{localStorage.removeItem("grid.me");}catch(err){}
-      pushPresence();renderRail();closeSheet();return;}
+      pushPresence();renderRail();renderSettings();closeSheet();return;}
     if((x=t.closest("[data-m]"))&&pick){
       S.me=x.dataset.m;try{localStorage.setItem("grid.me",S.me);}catch(err){}
-      pushPresence();renderRail();closeSheet();}
+      pushPresence();renderRail();renderSettings();closeSheet();}
   });
   el.addEventListener("keydown",function(e){
     if(e.key==="Enter"&&e.target.matches("[data-mnew]")){e.preventDefault();
@@ -2476,6 +2509,150 @@ function commitColDrop(d){
   col.order=order; w(S.store.update("columns",d.id,{order:order}));
   if(needsNormalize(po,no)) normalize(cols(),"columns");
 }
+
+/* ═════════ календари ═════════ */
+/* Задача в календаре — событие на весь день, с даты начала по дедлайн
+   включительно. Тот же формат отдаёт лента supabase/functions/grid-calendar. */
+function taskLink(c){return location.origin+location.pathname+"#task="+encodeURIComponent(c.id);}
+function calDays(c){
+  var a=c.start||c.due,b=c.due||c.start;
+  if(a>b){var t=a;a=b;b=t;}
+  var end=parseISO(b); end.setDate(end.getDate()+1);   /* конец в календарях не включается */
+  return {start:a.replace(/-/g,""),end:iso(end).replace(/-/g,"")};
+}
+function calDetails(c){
+  var col=column(c.columnId);
+  return (col?colPath(col):"")+(c.desc?"\n\n"+c.desc:"")+"\n\n"+taskLink(c);
+}
+function googleLink(c){
+  var d=calDays(c);
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(c.title)+
+    "&dates="+d.start+"/"+d.end+"&details="+encodeURIComponent(calDetails(c));
+}
+/* iCalendar: экранирование текста и перенос строк длиннее 75 байт (RFC 5545) */
+function icsText(s){return String(s).replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n");}
+function icsFold(line){
+  var out="",size=0,enc=new TextEncoder();
+  Array.from(line).forEach(function(ch){
+    var n=enc.encode(ch).length;
+    if(size+n>75){out+="\r\n ";size=1;}
+    out+=ch; size+=n;
+  });
+  return out;
+}
+function downloadICS(c){
+  var d=calDays(c),now=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,"");
+  var body=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Grid//Tasks//RU","METHOD:PUBLISH","BEGIN:VEVENT",
+    "UID:"+c.id+"@grid","DTSTAMP:"+now,"DTSTART;VALUE=DATE:"+d.start,"DTEND;VALUE=DATE:"+d.end,
+    "SUMMARY:"+icsText(c.title),"DESCRIPTION:"+icsText(calDetails(c)),"URL:"+taskLink(c),
+    "TRANSP:TRANSPARENT","END:VEVENT","END:VCALENDAR"].map(icsFold).join("\r\n")+"\r\n";
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([body],{type:"text/calendar;charset=utf-8"}));
+  a.download=(c.title.replace(/[\\\/:*?"<>|]+/g," ").trim().slice(0,60)||"Задача")+".ics";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+}
+/* ссылка grid.html#task=ID (из события в календаре) открывает задачу */
+function openFromHash(){
+  var m=/^#task=(.+)$/.exec(location.hash),c=m&&card(decodeURIComponent(m[1]));
+  if(!c) return;
+  history.replaceState(null,"",location.pathname+location.search);
+  if(c.projectId!==S.project) switchProject(c.projectId);
+  openCard(c.id);
+}
+window.addEventListener("hashchange",openFromHash);
+
+/* ═════════ настройки ═════════ */
+var settingsEl=$("#settings");
+S.feedScope="mine";
+function myFeed(){return S.me?S.feeds.filter(function(f){return f.memberId===S.me;})[0]||null:null;}
+function feedURL(f){return CFG.url.replace(/\/+$/,"")+"/functions/v1/grid-calendar?token="+f.id;}
+function newToken(){
+  var b=crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode.apply(null,b)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+function settingsHTML(){
+  var m=S.me?member(S.me):null,f=myFeed(),scope=f?f.scope:S.feedScope,block;
+  if(S.store.kind!=="supabase"){
+    block='<div class="drop-hint">Подписка заработает после подключения базы Supabase и функции календаря — '+
+      "шаги в README. Отдельную задачу можно добавить в календарь уже сейчас: кнопки «В календарь» в панели задачи.</div>";
+  }else if(!m){
+    block="<p>Ссылка личная, поэтому сначала выберите себя.</p>"+
+      '<div class="row"><button class="btn" data-setme="1">Кто вы?</button></div>';
+  }else{
+    block='<div class="choice" role="radiogroup" aria-label="Какие задачи показывать в календаре">'+
+        '<label><input type="radio" name="feedScope" value="mine"'+(scope==="mine"?" checked":"")+">"+
+          "<span>Мои задачи<small>Где ответственный — "+esc(m.name)+"</small></span></label>"+
+        '<label><input type="radio" name="feedScope" value="all"'+(scope==="all"?" checked":"")+">"+
+          "<span>Все задачи команды<small>Из всех проектов</small></span></label></div>"+
+      (f?'<div class="feed"><input readonly data-feedurl="1" aria-label="Ссылка на календарь" value="'+esc(feedURL(f))+'">'+
+          '<button class="btn" data-feedcopy="1">Скопировать</button></div>'+
+        '<details class="steps"><summary>Как добавить в Google Календарь</summary><ol>'+
+          "<li>Откройте Google Календарь на компьютере.</li>"+
+          "<li>Слева у «Другие календари» нажмите «+» → «Добавить по URL».</li>"+
+          "<li>Вставьте ссылку и нажмите «Добавить календарь».</li></ol></details>"+
+        '<details class="steps"><summary>Как добавить в Outlook</summary><ol>'+
+          "<li>Откройте календарь в Outlook.</li>"+
+          "<li>«Добавить календарь» → «Подписаться из Интернета».</li>"+
+          "<li>Вставьте ссылку, задайте имя и нажмите «Импорт».</li></ol></details>"+
+        '<div class="row"><button class="btn ghost" data-feednew="1">Перевыпустить ссылку</button>'+
+          '<button class="btn danger" data-feedoff="1">Отключить</button></div>'+
+        '<p class="small">Ссылка секретная: по ней задачи видит любой, у кого она есть. Если она попала не туда, '+
+          "перевыпустите её — старая перестанет работать.</p>"
+       :'<div class="row"><button class="btn" data-feednew="1">Создать ссылку</button></div>');
+  }
+  return drawerHead("Настройки")+'<div class="d-body"><section class="set">'+
+    '<div class="sect-h"><h3>Календари</h3></div>'+
+    "<p>Задачи с датами появятся в вашем Google Календаре или Outlook — на весь день, с даты начала по дедлайн. "+
+    "Календарь сам забирает изменения раз в несколько часов, ускорить это нельзя. Правки в календаре в доску не возвращаются.</p>"+
+    block+"</section></div>";
+}
+function settingsOpen(){return settingsEl.classList.contains("on");}
+function renderSettings(){if(settingsOpen()) settingsEl.innerHTML=settingsHTML();}
+function openSettings(){
+  closeSide(); closeDrawer(); closeSheet();
+  settingsEl.innerHTML=settingsHTML();
+  settingsEl.classList.add("on"); scrimEl.classList.add("on"); settingsEl.setAttribute("aria-hidden","false");
+  var b=$("[data-dclose]",settingsEl); if(b) b.focus();
+}
+function closeSettings(){
+  if(!settingsOpen()) return;
+  settingsEl.classList.remove("on"); scrimEl.classList.remove("on"); settingsEl.setAttribute("aria-hidden","true");
+}
+function createFeed(scope){
+  var id=newToken(),body={memberId:S.me,scope:scope,createdAt:Date.now()};
+  S.feeds.push(Object.assign({id:id},body));
+  w(S.store.set("feeds",id,body));
+}
+function dropFeed(f){
+  S.feeds=S.feeds.filter(function(x){return x.id!==f.id;});
+  w(S.store.del("feeds",f.id));
+}
+settingsEl.addEventListener("click",function(e){
+  var t=e.target,f=myFeed(),b;
+  if(t.closest("[data-dclose]")){closeSettings();return;}
+  if((b=t.closest("[data-setme]"))){openSheet(b,membersHTML(true),function(el){wireMembers(el,true);});return;}
+  if(t.closest("[data-feedcopy]")){
+    var inp=$("[data-feedurl]",settingsEl);
+    navigator.clipboard.writeText(inp.value).then(function(){flash("Ссылка скопирована");},
+      function(){inp.select();flash("Скопируйте выделенную ссылку вручную");});
+    return;}
+  if(t.closest("[data-feednew]")){
+    if(f&&!confirm("Старая ссылка перестанет работать, в календаре её нужно будет заменить. Перевыпустить?")) return;
+    var scope=f?f.scope:S.feedScope;
+    if(f) dropFeed(f);
+    createFeed(scope); renderSettings(); return;}
+  if(t.closest("[data-feedoff]")){
+    if(f&&confirm("Отключить ссылку? Задачи пропадут из календаря при его следующем обновлении.")){dropFeed(f);renderSettings();}
+  }
+});
+settingsEl.addEventListener("change",function(e){
+  if(e.target.name!=="feedScope") return;
+  var f=myFeed();
+  if(f){f.scope=e.target.value;w(S.store.update("feeds",f.id,{scope:f.scope}));}
+  else S.feedScope=e.target.value;
+  renderSettings();
+});
 
 /* ═════════ события ═════════ */
 mainEl.addEventListener("pointerdown",pointDown);
@@ -2645,6 +2822,7 @@ drawerEl.addEventListener("click",function(e){
   if((el=t.closest("[data-dprio]"))){patchCard(c.id,{priority:el.dataset.dprio});return;}
   if(kindClick(t,"task",c.kind,function(k){patchCard(c.id,{kind:k});renderDrawer(true);})) return;
   if((el=t.closest("[data-stlist]"))){statusSheet(el);return;}
+  if(t.closest("[data-dics]")){downloadICS(c);return;}
   if((el=t.closest("[data-dsubcheck]"))){toggleDone(el.dataset.dsubcheck);return;}
   if((el=t.closest("[data-dopen]"))){openCard(el.dataset.dopen);return;}
   if((el=t.closest("[data-upload]"))&&el.dataset.upload==="card"){pickFile(c.id);return;}
@@ -2718,9 +2896,11 @@ drawerEl.addEventListener("keydown",function(e){
   }
 });
 drawerEl.addEventListener("focusout",function(){setTimeout(function(){renderDrawer();},180);});
-scrimEl.addEventListener("click",closeDrawer);
+scrimEl.addEventListener("click",function(){closeDrawer();closeSettings();});
 document.addEventListener("keydown",function(e){
-  if(e.key==="Escape"){if(sheetEl)closeSheet();else if(sideOpen())closeSide();else if(S.open||S.openNote)closeDrawer();}
+  if(e.key!=="Escape") return;
+  if(sheetEl) closeSheet(); else if(sideOpen()) closeSide();
+  else if(settingsOpen()) closeSettings(); else if(S.open||S.openNote) closeDrawer();
 });
 
 $("#q").addEventListener("input",function(e){S.filter.q=e.target.value.trim();renderMain();});
@@ -2795,6 +2975,8 @@ function attach(store){
       }
       renderMain();
       if(S.open||S.openNote) renderDrawer();
+      renderSide(); renderSettings();
+      if(coll==="cards") openFromHash();
       if(coll==="members") pushPresence();
     });
   });

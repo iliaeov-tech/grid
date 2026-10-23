@@ -103,6 +103,14 @@ create table if not exists public.notes (
   updated_at timestamptz not null default now()
 );
 
+-- ссылки на календарь для подписки (функция grid-calendar); id — секретный токен
+create table if not exists public.feeds (
+  id         text primary key,
+  member_id  text not null references public.members(id) on delete cascade,
+  scope      text not null default 'mine' check (scope in ('mine','all')),  -- мои задачи или все
+  created_at timestamptz not null default now()
+);
+
 create index if not exists columns_project_idx  on public.columns  (project_id, pos);
 create index if not exists cards_column_idx     on public.cards    (column_id, pos);
 create index if not exists cards_project_idx    on public.cards    (project_id);
@@ -119,7 +127,7 @@ create index if not exists kinds_project_idx    on public.kinds    (project_id, 
 do $$
 declare t text;
 begin
-  foreach t in array array['projects','members','statuses','kinds','columns','cards','comments','files','notes'] loop
+  foreach t in array array['projects','members','statuses','kinds','columns','cards','comments','files','notes','feeds'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', t || '_rw', t);
     execute format('create policy %I on public.%I for all to authenticated using (true) with check (true)', t || '_rw', t);
@@ -147,7 +155,7 @@ create policy grid_files_delete on storage.objects for delete to authenticated
 do $$
 declare t text;
 begin
-  foreach t in array array['projects','members','statuses','kinds','columns','cards','comments','files','notes'] loop
+  foreach t in array array['projects','members','statuses','kinds','columns','cards','comments','files','notes','feeds'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;

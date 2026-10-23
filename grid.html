@@ -370,14 +370,16 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .cal-when .m{font-size:12px;color:var(--ink-3);text-transform:capitalize}
 .cal-when.late .d{color:var(--danger)}
 .cal-when.today .d{color:var(--accent)}
-.cal-list{display:flex;flex-direction:column;gap:4px}
+.cal-list{display:flex;flex-direction:column;gap:4px;min-width:0}
 .cal-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-m);
   background:var(--surface);box-shadow:var(--sh-1);cursor:pointer}
 .cal-item:hover{box-shadow:var(--sh-2)}
 .cal-item .dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--pc)}
 .cal-item .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cal-item.done .t{text-decoration:line-through;color:var(--ink-3)}
+.cal-item .metas{display:flex;gap:10px;min-width:0}
 .cal-item .meta{font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+.cal-when .ms{display:none}
 
 /* ───────────────── заметки и файлы ───────────────── */
 .notes{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:26px}
@@ -741,9 +743,13 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 @media (max-width:640px){
   .rail{gap:9px;padding:calc(9px + env(safe-area-inset-top)) 12px 9px}
   .brand+.rail-sep{display:none}
-  .rail-right{gap:7px}
-  .search input{width:150px}
-  select.pick{max-width:150px}
+  .rail-right{gap:7px;flex:1 1 100%;margin:0 -12px;padding:2px 12px;flex-wrap:nowrap;overflow-x:auto;
+    scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .rail-right::-webkit-scrollbar{display:none}
+  .rail-right>*{flex:none}
+  .rail-right .rail-sep{display:none}
+  .search input{width:160px}
+  select.pick{max-width:none}
   .notice{padding:6px 12px;font-size:12px}
   .tabs{padding:0 8px}
   .tab{padding:9px 10px;gap:6px}
@@ -754,7 +760,16 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
   /* подпись над полем, а не слева: на узкой панели делить ширину нечем */
   .fields{grid-template-columns:1fr;gap:3px 0}
   .fields .lbl{margin-top:9px}
-  .cal-day{grid-template-columns:76px 1fr;gap:12px}
+  .cal-day{grid-template-columns:48px minmax(0,1fr);gap:10px}
+  .cal-when .d{font-size:18px}
+  .cal-when .mf{display:none}
+  .cal-when .ms{display:inline}
+  .cal-item{flex-wrap:wrap;align-items:flex-start;row-gap:3px}
+  .cal-item .dot{margin-top:6px}
+  .cal-item .t{flex:1 1 calc(100% - 52px);white-space:normal;overflow:visible;word-break:break-word;line-height:1.4}
+  .cal-item .av{order:1}
+  .cal-item .metas{order:2;flex:1 1 100%;flex-wrap:wrap;gap:4px 10px;padding-left:17px}
+  .cal-item .meta{white-space:normal}
   .drawer{width:100vw}
 }
 @media (max-width:430px){
@@ -1872,7 +1887,7 @@ function renderCalendar(){
     var late=(k<today&&groups[k].some(function(c){return !c.done;}));
     var when='<div class="cal-when'+(td?" today":late?" late":"")+'">'+
       '<div class="d">'+d.getDate()+"</div>"+
-      '<div class="m">'+MONTHS_FULL[d.getMonth()]+", "+WEEK[d.getDay()]+"</div>"+
+      '<div class="m"><span class="mf">'+MONTHS_FULL[d.getMonth()]+'</span><span class="ms">'+MONTHS[d.getMonth()]+"</span>, "+WEEK[d.getDay()]+"</div>"+
       (td?'<div class="m" style="color:var(--accent)">сегодня</div>'
         :late?'<div class="m" style="color:var(--danger)">просрочено</div>':"")+"</div>";
     var items=groups[k].sort(function(a,b){return (a.done?1:0)-(b.done?1:0);}).map(function(c){
@@ -1880,8 +1895,8 @@ function renderCalendar(){
       return '<div class="cal-item'+(c.done?" done":"")+'" data-card="'+esc(c.id)+'" '+
         'style="--pc:'+prioVar(c.priority||"med")+'">'+
         '<span class="dot"></span><span class="t">'+(c.parentId?"↳ ":"")+esc(c.title)+"</span>"+
-        (k?'<span class="meta">'+esc(k.label)+"</span>":"")+
-        '<span class="meta">'+esc(col?col.title:"")+"</span>"+
+        '<span class="metas">'+(k?'<span class="meta">'+esc(k.label)+"</span>":"")+
+          '<span class="meta">'+esc(col?col.title:"")+"</span></span>"+
         (as?'<span class="av sm" style="background:'+esc(as.color)+'" title="'+esc(as.name)+'">'+esc(initials(as.name))+"</span>":"")+
         "</div>";}).join("");
     return '<section class="cal-day">'+when+'<div class="cal-list">'+items+"</div></section>";

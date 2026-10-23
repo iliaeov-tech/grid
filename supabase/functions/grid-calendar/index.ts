@@ -2,9 +2,10 @@
 //
 // Приложение календаря периодически забирает ссылку
 //   https://<проект>.supabase.co/functions/v1/grid-calendar?token=<токен>
-// Токен — строка таблицы feeds: чьи задачи (member_id) и какие (scope).
-// Функция развёрнута без проверки JWT: приложения календаря не умеют
-// входить, доступ к задачам даёт только сам токен.
+// Токен — строка таблицы feeds: чья ссылка (user_id) и какие задачи (scope).
+// В календарь попадают задачи только из проектов, где этот человек участник,
+// и ничего из корзины. Функция развёрнута без проверки JWT: приложения
+// календаря не умеют входить, доступ к задачам даёт только сам токен.
 
 const BOARD = Deno.env.get("GRID_URL") ?? "https://iliaeov-tech.github.io/grid/grid.html";
 
@@ -82,19 +83,27 @@ Deno.serve(async (req) => {
   const missing = () => new Response("Ссылка календаря не найдена или отключена.", { status: 404 });
   if (!/^[A-Za-z0-9_-]{24,64}$/.test(token)) return missing();
   try {
-    const [feed] = await rest(`feeds?select=member_id,scope&id=eq.${token}`);
+    const [feed] = await rest(`feeds?select=user_id,scope&id=eq.${token}`);
     if (!feed) return missing();
-    const mine = feed.scope === "mine";
-    const [cards, projects, columns, members] = await Promise.all([
-      rest("cards?select=id,title,descr,done,start_on,due,project_id,column_id,updated_at" +
-        "&archived=is.false&or=(due.not.is.null,start_on.not.is.null)" +
-        (mine ? `&assignee=eq.${encodeURIComponent(feed.member_id)}` : "")),
-      rest("projects?select=id,name"),
-      rest("columns?select=id,title"),
-      mine ? rest(`members?select=name&id=eq.${encodeURIComponent(feed.member_id)}`) : Promise.resolve([]),
+    const mine = feed.scope === "mine", who = encodeURIComponent(feed.user_id);
+    const [memberships, people] = await Promise.all([
+      rest(`project_members?select=project_id&user_id=eq.${who}`),
+      rest(`profiles?select=name&id=eq.${who}`),
     ]);
-    const name = mine ? `Grid — задачи: ${members[0]?.name ?? ""}` : "Grid — все задачи";
-    return new Response(calendar(name, cards, projects, columns), {
+    const ids = memberships.map((m) => `"${String(m.project_id).replace(/"/g, "")}"`).join(",");
+    const among = encodeURIComponent(`(${ids})`);
+    const [cards, projects, columns] = ids ? await Promise.all([
+      rest("cards?select=id,title,descr,done,start_on,due,project_id,column_id,updated_at" +
+        `&project_id=in.${among}&archived=is.false&deleted_at=is.null&or=(due.not.is.null,start_on.not.is.null)` +
+        (mine ? `&assignee=eq.${who}` : "")),
+      rest(`projects?select=id,name&id=in.${among}&deleted_at=is.null`),
+      rest(`columns?select=id,title&project_id=in.${among}&deleted_at=is.null`),
+    ]) : [[], [], []];
+    // задачи из колонок и проектов в корзине тоже не показываем
+    const alive = new Set(columns.map((c) => c.id)), live = new Set(projects.map((p) => p.id));
+    const shown = cards.filter((c) => alive.has(c.column_id) && live.has(c.project_id));
+    const name = mine ? `Grid — задачи: ${people[0]?.name ?? ""}` : "Grid — все задачи";
+    return new Response(calendar(name, shown, projects, columns), {
       headers: {
         "Content-Type": "text/calendar; charset=utf-8",
         "Content-Disposition": 'inline; filename="grid.ics"',

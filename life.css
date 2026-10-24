@@ -153,10 +153,12 @@
   .lt-views button{flex:1;padding:8px 4px;min-height:40px}
   .lpane{padding:12px 12px 110px}
   .lmonth{padding:8px 6px 110px}
-  .mc{min-height:62px;padding:3px 2px;align-items:center}
+  /* число и точки — одна группа по центру ячейки; место под точки есть
+     всегда, поэтому числа в строке стоят на одной высоте */
+  .mc{min-height:62px;padding:3px 2px;align-items:center;justify-content:center;gap:4px}
   .mc .mc-items{display:none}
-  .mc .mc-dots{display:flex;gap:3px;flex-wrap:wrap;justify-content:center}
-  .mc-dots i{width:6px;height:6px;border-radius:50%;background:var(--ki,var(--accent))}
+  .mc .mc-dots{display:flex;gap:3px;justify-content:center;height:6px}
+  .mc-dots i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--ki,var(--accent))}
   .lg-row,.lg-body{grid-template-columns:36px repeat(var(--days),minmax(0,1fr))}
   .lg-hours span{right:4px}
   .lg-hours i{display:none}

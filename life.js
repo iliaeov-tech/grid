@@ -520,7 +520,7 @@ function monthHTML(){
         (d===sel?", выбран — нажмите ещё раз, чтобы добавить задачу":"")+'">'+K.parseISO(d).getDate()+"</button>"+
       '<span class="mc-items">'+list.slice(0,3).map(chipHTML).join("")+
         (list.length>3?'<span class="mc-more">ещё '+(list.length-3)+"</span>":"")+"</span>"+
-      '<span class="mc-dots" aria-hidden="true">'+list.slice(0,4).map(function(i){
+      '<span class="mc-dots" aria-hidden="true">'+list.slice(0,3).map(function(i){
         return '<i style="'+kindStyle(i.t)+'"></i>';}).join("")+"</span></div>";
   }
   return '<div class="lv-body"><div class="lmonth"><div class="lm-week">'+dayOrder().map(function(i){return "<span>"+WEEKDAYS[i]+"</span>";}).join("")+

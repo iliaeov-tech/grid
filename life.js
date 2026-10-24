@@ -1311,13 +1311,61 @@ function fabDate(){
   if(L.view==="week"){var s=shownWeek(L.cursor);return t>=s&&t<=addDays(s,6)?t:s;}
   return t;
 }
+/* листание: n=1 — следующий месяц, неделя или день, n=-1 — предыдущий */
+function navStep(n){
+  L.cursor=L.view==="month"?addMonths(L.cursor,n):addDays(L.cursor,L.view==="week"?7*n:n);
+  render();
+}
+/* Свайп по месяцу, неделе и дню на телефоне. Ловим только явно
+   горизонтальное движение (в полтора раза больше вертикального) от 50 px
+   и не у краёв экрана — там в Safari жест «назад». Пока палец едет,
+   календарь едет вместе с ним. */
+var SWIPE_MIN=50,SWIPE_EDGE=20,SWIPE_MS=160,swipe=null,swipedAt=0;
+function swipeEl(){return L.view==="month"?$(".lm-grid",L.el):L.view==="list"?null:$(".lgrid",L.el);}
+function onTouchStart(e){
+  swipe=null;
+  if(!phone.matches||e.touches.length!==1) return;
+  var t=e.touches[0],el=swipeEl();
+  if(!el||!el.contains(e.target)||t.clientX<SWIPE_EDGE||t.clientX>window.innerWidth-SWIPE_EDGE) return;
+  swipe={x:t.clientX,y:t.clientY,dx:0,el:el,on:false};
+}
+function onTouchMove(e){
+  if(!swipe) return;
+  var t=e.touches[0],dx=t.clientX-swipe.x,dy=t.clientY-swipe.y;
+  if(!swipe.on){
+    if(Math.abs(dx)<10&&Math.abs(dy)<10) return;
+    if(Math.abs(dx)<Math.abs(dy)*1.5){swipe=null;return;}   /* вертикально — обычная прокрутка */
+    swipe.on=true; swipe.el.style.transition="none";
+  }
+  e.preventDefault();
+  swipe.dx=dx; swipe.el.style.transform="translateX("+dx+"px)";
+}
+function onTouchEnd(){
+  var s=swipe; swipe=null;
+  if(!s||!s.on) return;
+  swipedAt=Date.now();
+  var w=s.el.offsetWidth,n=s.dx<0?1:-1;
+  s.el.style.transition="transform "+SWIPE_MS+"ms ease-out";
+  if(Math.abs(s.dx)<SWIPE_MIN){s.el.style.transform="";return;}   /* короткий — возвращаем на место */
+  /* старый месяц уходит в сторону свайпа, новый въезжает с другой */
+  s.el.style.transform="translateX("+(-n*w)+"px)";
+  setTimeout(function(){
+    navStep(n);
+    var el=swipeEl(); if(!el) return;
+    el.style.transition="none"; el.style.transform="translateX("+(n*w)+"px)";
+    void el.offsetWidth;
+    el.style.transition="transform "+SWIPE_MS+"ms ease-out"; el.style.transform="";
+  },SWIPE_MS);
+}
+function onTouchCancel(){
+  if(swipe&&swipe.on){swipe.el.style.transition="transform "+SWIPE_MS+"ms ease-out";swipe.el.style.transform="";}
+  swipe=null;
+}
 function onMainClick(e){
   var t=e.target,b;
+  if(Date.now()-swipedAt<400) return;          /* касание, закончившее свайп, — не нажатие на день */
   if((b=t.closest("[data-lview]"))){setView(b.dataset.lview);return;}
-  if((b=t.closest("[data-lnav]"))){
-    var n=+b.dataset.lnav;
-    L.cursor=L.view==="month"?addMonths(L.cursor,n):addDays(L.cursor,L.view==="week"?7*n:n);
-    render(); return;}
+  if((b=t.closest("[data-lnav]"))){navStep(+b.dataset.lnav);return;}
   if(t.closest("[data-ltoday]")){
     L.cursor=L.selected=today(); L.shownKey="";
     render(); if(L.view==="list"){var s=$(".lv-body",L.el);if(s)s.scrollTop=0;} return;}
@@ -1414,6 +1462,10 @@ window.GridLife={
   show:function(el){
     if(!L.el){
       L.el=el; el.addEventListener("click",onMainClick);
+      el.addEventListener("touchstart",onTouchStart,{passive:true});
+      el.addEventListener("touchmove",onTouchMove,{passive:false});
+      el.addEventListener("touchend",onTouchEnd);
+      el.addEventListener("touchcancel",onTouchCancel);
       L.loading=load().then(function(){
         if(lp().view!=="last") L.view=lp().view;
         if(L.meta.pin&&!L.unlocked) showLock();

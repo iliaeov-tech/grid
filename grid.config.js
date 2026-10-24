@@ -13,5 +13,8 @@
 window.GRID_CONFIG = {
   url:     "",   // https://xxxxxxxx.supabase.co
   anonKey: "",   // eyJhbGciOiJIUzI1NiIs...
-  auth:    "google"   // "google" | "github" | "email"
+  auth:    "google",  // "google" | "github" | "email"
+  // почта для кнопки «Сообщить о проблеме или предложить идею» в настройках;
+  // пока пусто, кнопка копирует сведения о версии, чтобы их можно было переслать
+  feedback: ""
 };

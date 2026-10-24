@@ -15,7 +15,8 @@ create table if not exists public.profiles (
   email      text not null default '',
   name       text not null default '',
   color      text not null default '#2F8FD4',
-  avatar     text not null default '',      -- путь в хранилище; пусто — инициалы
+  -- фото 160×160 как data:URL (JPEG, ~10 КБ); пусто — инициалы
+  avatar     text not null default '' check (length(avatar) <= 100000),
   settings   jsonb not null default '{}',   -- личные настройки отображения
   created_at timestamptz not null default now()
 );
@@ -341,11 +342,13 @@ create policy cards_delete   on public.cards   for delete to authenticated using
 create policy notes_delete   on public.notes   for delete to authenticated using (public.grid_can_edit(project_id));
 create policy files_delete   on public.files   for delete to authenticated using (public.grid_can_edit(project_id));
 
--- комментировать может любой участник, в том числе наблюдатель
+-- комментировать может любой участник, в том числе наблюдатель; без автора
+-- (только имя — так восстанавливаются комментарии из резервной копии) пишет владелец
 create policy comments_read   on public.comments for select to authenticated
   using (public.grid_can_see(public.grid_card_project(card_id)));
 create policy comments_insert on public.comments for insert to authenticated
-  with check (public.grid_can_see(public.grid_card_project(card_id)) and author_id = auth.uid());
+  with check (public.grid_can_see(public.grid_card_project(card_id)) and (author_id = auth.uid()
+    or author_id is null and public.grid_is_owner(public.grid_card_project(card_id))));
 create policy comments_update on public.comments for update to authenticated
   using (author_id = auth.uid()) with check (author_id = auth.uid());
 create policy comments_delete on public.comments for delete to authenticated
@@ -357,7 +360,7 @@ create policy feeds_own on public.feeds for all to authenticated
 -- ── Хранилище файлов ───────────────────────────────────────
 -- Приватный бакет: ссылки на скачивание выдаются на 2 минуты.
 -- Один файл — не больше 10 МБ (тот же предел проверяет интерфейс).
--- Файл загружают в папку проекта, аватар — в avatars/<id пользователя>/.
+-- Файл загружают в папку проекта.
 insert into storage.buckets (id, name, public, file_size_limit)
   values ('grid-files', 'grid-files', false, 10485760)
   on conflict (id) do update set file_size_limit = excluded.file_size_limit;
@@ -367,16 +370,11 @@ drop policy if exists grid_files_insert on storage.objects;
 drop policy if exists grid_files_delete on storage.objects;
 
 create policy grid_files_read on storage.objects for select to authenticated using (
-  bucket_id = 'grid-files' and ((storage.foldername(name))[1] = 'avatars'
-    or public.grid_can_see(public.grid_object_project(name))));
+  bucket_id = 'grid-files' and public.grid_can_see(public.grid_object_project(name)));
 create policy grid_files_insert on storage.objects for insert to authenticated with check (
-  bucket_id = 'grid-files' and (
-    ((storage.foldername(name))[1] = 'avatars' and (storage.foldername(name))[2] = auth.uid()::text)
-    or public.grid_can_edit((storage.foldername(name))[1])));
+  bucket_id = 'grid-files' and public.grid_can_edit((storage.foldername(name))[1]));
 create policy grid_files_delete on storage.objects for delete to authenticated using (
-  bucket_id = 'grid-files' and (
-    ((storage.foldername(name))[1] = 'avatars' and (storage.foldername(name))[2] = auth.uid()::text)
-    or public.grid_can_edit(public.grid_object_project(name))));
+  bucket_id = 'grid-files' and public.grid_can_edit(public.grid_object_project(name)));
 
 -- ── Живые обновления (правки коллег видны без перезагрузки) ─
 do $$

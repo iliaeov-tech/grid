@@ -220,6 +220,11 @@
 .llock-box p{margin:0;color:var(--ink-2)}
 .llock-box .llock-msg{min-height:20px;font-size:13px;color:var(--danger)}
 .llock-box .btn{width:100%;padding:10px;border:1px solid var(--line-2)}
+.llock-pin{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
+/* bio — ждём Face ID, pin — ввод PIN */
+.llock.bio .llock-pin,.llock.pin .llock-bio,.llock.pin [data-lpinshow]{display:none}
+.llock .btn.main,.ldialog .btn.main{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.ldialog .btn.main:hover{background:var(--accent-hov);color:var(--accent-ink)}
 /* настройки Grid Life: переключатель стандартного типа и очистка */
 .set .mrow .sp{flex:1}
 .switch.mini{padding:0;flex:none}

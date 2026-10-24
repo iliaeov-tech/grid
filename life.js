@@ -89,12 +89,18 @@ var L={ready:false,loading:null,el:null,tasks:[],kinds:[],files:[],meta:{},persi
   view:"list",cursor:today(),selected:today(),listDays:30,shownKey:""};
 try{var v=localStorage.getItem("grid.life.view");if(v&&VIEWS.some(function(x){return x.id===v;}))L.view=v;}catch(e){}
 
+/* есть ли на устройстве Face ID, Touch ID или Windows Hello */
+function bioCheck(){
+  var P=window.PublicKeyCredential;
+  if(!P||!P.isUserVerifyingPlatformAuthenticatorAvailable) return Promise.resolve(false);
+  return P.isUserVerifyingPlatformAuthenticatorAvailable().catch(function(){return false;});
+}
 function load(){
   return openDB().then(function(d){
     db=d;
-    return Promise.all([all("tasks"),all("kinds"),all("files"),all("meta")]);
+    return Promise.all([all("tasks"),all("kinds"),all("files"),all("meta"),bioCheck()]);
   }).then(function(r){
-    L.tasks=r[0]; L.kinds=r[1]; L.files=r[2];
+    L.tasks=r[0]; L.kinds=r[1]; L.files=r[2]; L.bioOK=r[4];
     L.meta={}; r[3].forEach(function(m){L.meta[m.key]=m.value;});
     if(!L.meta.firstUseAt) setMeta("firstUseAt",Date.now());
     L.ready=true;
@@ -352,8 +358,9 @@ function deleteOcc(t,orig,scope){
 }
 /* Окно с вопросом. buttons — [значение, подпись, класс]; пустое значение —
    «Отмена». pin — ещё поле для четырёх цифр: окно вернёт их, как только
-   они набраны. «Отмена» и Escape возвращают null. */
-function dialog(title,text,buttons,pin){
+   они набраны. act — что выполнить прямо в нажатии кнопки (Face ID
+   Safari запускает только из самого нажатия). «Отмена» и Escape — null. */
+function dialog(title,text,buttons,pin,act){
   return new Promise(function(res){
     var box=document.createElement("div");
     box.className="ldialog"; box.setAttribute("role","dialog"); box.setAttribute("aria-modal","true");
@@ -368,6 +375,7 @@ function dialog(title,text,buttons,pin){
     document.addEventListener("keydown",onKey,true);
     box.addEventListener("click",function(e){
       var b=e.target.closest("[data-sc]");
+      if(b&&act&&act[b.dataset.sc]) act[b.dataset.sc]();
       if(b) done(b.dataset.sc); else if(e.target===box) done(null);
     });
     var inp=$(".lpin",box);
@@ -1002,13 +1010,55 @@ function sideHTML(){
 var installEvt=null;
 window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();installEvt=e;K.renderSettings();});
 
-/* ═════════ PIN и экран блокировки ═════════ */
+/* ═════════ PIN, Face ID и экран блокировки ═════════ */
 /* PIN закрывает Grid Life от чужих глаз на этом устройстве. Это не
    шифрование: в meta лежит только хеш PIN с солью, задачи — как были. */
 function hashPin(pin,salt){
   return crypto.subtle.digest("SHA-256",new TextEncoder().encode(salt+":"+pin)).then(function(b){
     return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,"0");}).join("");});
 }
+/* Face ID — passkey на этом устройстве (WebAuthn, платформенный
+   аутентификатор), без сервера. Это тоже только защита экрана: Grid Life
+   хранит id ключа и открывается, если система подтвердила владельца.
+   Ключ привязан к адресу сайта, PIN всегда остаётся запасным способом. */
+function rnd(n){return crypto.getRandomValues(new Uint8Array(n));}
+function b64u(buf){
+  return btoa(String.fromCharCode.apply(null,new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+function unb64u(s){
+  var b=atob(s.replace(/-/g,"+").replace(/_/g,"/")),u=new Uint8Array(b.length);
+  for(var i=0;i<b.length;i++) u[i]=b.charCodeAt(i);
+  return u;
+}
+function apple(){var u=navigator.userAgent;return /iPhone|iPad|iPod/.test(u)||/Macintosh/.test(u)&&navigator.maxTouchPoints>1;}
+function bioName(){var u=navigator.userAgent;return apple()?"Face ID":/Macintosh/.test(u)?"Touch ID":/Windows/.test(u)?"Windows Hello":"биометрии";}
+function bioWhere(){
+  return apple()?"Запись «Grid Life» появится в «Паролях» iPhone.":"Запись «Grid Life» сохранится в менеджере паролей устройства.";
+}
+function bioUsable(){return !!(L.meta.bio&&L.bioOK);}
+/* запуск — прямо из нажатия кнопки: Safari показывает Face ID только так */
+function registerBio(){
+  if(!L.meta.bioUser) setMeta("bioUser",b64u(rnd(16)));   /* тот же владелец — новый ключ заменит старый */
+  return navigator.credentials.create({publicKey:{
+    challenge:rnd(32),rp:{name:"Grid Life"},
+    user:{id:unb64u(L.meta.bioUser),name:"Grid Life",displayName:"Grid Life"},
+    pubKeyCredParams:[{type:"public-key",alg:-7},{type:"public-key",alg:-257}],
+    authenticatorSelection:{authenticatorAttachment:"platform",userVerification:"required",residentKey:"preferred"},
+    timeout:60000,attestation:"none"}}).then(function(c){
+      setMeta("bio",{id:b64u(c.rawId),at:Date.now()});
+      K.renderSettings(true); K.flash("Вход по "+bioName()+" включён");
+      return true;
+    },function(e){
+      K.renderSettings(true);
+      K.flash(e&&e.name==="NotAllowedError"?"Вход по "+bioName()+" не включён":"Не удалось включить вход по "+bioName()+": "+((e&&e.message)||""));
+      return false;
+    });
+}
+function offerBio(){
+  return dialog("PIN задан. Входить по "+bioName()+"?","Grid Life будет открываться по "+bioName()+", а PIN останется запасным способом. "+bioWhere(),
+    [["bio","Включить вход по "+bioName(),"main"],["","Не сейчас"]],false,{bio:registerBio});
+}
+/* сначала PIN — запасной способ, потом предложение включить Face ID */
 function setPin(){
   if(!window.crypto||!crypto.subtle){K.flash("PIN работает только на защищённой странице (https)");return;}
   dialog("Новый PIN","Четыре цифры. Его спросят при переходе в Grid Life и при открытии приложения.",[["","Отмена"]],true).then(function(a){
@@ -1016,23 +1066,53 @@ function setPin(){
     return dialog("Повторите PIN","",[["","Отмена"]],true).then(function(b){
       if(!b) return;
       if(a!==b){K.flash("PIN не совпали — попробуйте ещё раз");return;}
-      var salt=newId();
+      var salt=newId(),first=!L.meta.pin;
       return hashPin(a,salt).then(function(h){
         setMeta("pin",{salt:salt,hash:h}); L.unlocked=true;
-        K.renderSettings(); K.flash("PIN задан");
+        K.renderSettings(true);
+        if(first&&L.bioOK&&!L.meta.bio) return offerBio();   /* окно само говорит, что PIN задан */
+        K.flash("PIN задан");
       });
     });
   });
 }
-var lockEl=null,lockFails=0,inerted=[];
+var lockEl=null,lockFails=0,inerted=[],bioAbort=null,bioTrouble=null;
+function lockState(s){
+  if(!lockEl) return;
+  lockEl.className="llock "+s;
+  var inp=$(".lpin",lockEl);
+  if(s==="pin"&&!inp.disabled) inp.focus();
+}
+/* Face ID спрашиваем сразу; отмена или ошибка — показываем PIN */
+function bioUnlock(){
+  var bio=L.meta.bio; if(!bio||!lockEl) return;
+  lockState("bio");
+  if(bioAbort) bioAbort.abort();
+  var ac=bioAbort=new AbortController();
+  navigator.credentials.get({signal:ac.signal,publicKey:{challenge:rnd(32),timeout:60000,userVerification:"required",
+    allowCredentials:[{type:"public-key",id:unb64u(bio.id),transports:["internal"]}]}}).then(function(a){
+    if(ac!==bioAbort) return;
+    /* тот самый ключ, и система подтвердила владельца (флаг UV) */
+    if(b64u(a.rawId)!==bio.id||!(new Uint8Array(a.response.authenticatorData)[32]&4)) throw {name:"Mismatch"};
+    bioAbort=null; bioTrouble=null; unlock();
+  }).catch(function(e){
+    if(ac!==bioAbort||!lockEl) return;
+    bioAbort=null; bioTrouble=(e&&e.name)||"Error";
+    lockState("pin");
+  });
+}
 function showLock(){
   if(lockEl) return;
   lockEl=document.createElement("div");
-  lockEl.className="llock"; lockEl.setAttribute("role","dialog"); lockEl.setAttribute("aria-modal","true");
+  lockEl.setAttribute("role","dialog"); lockEl.setAttribute("aria-modal","true");
   lockEl.setAttribute("aria-label","Grid Life закрыт PIN-кодом");
-  lockEl.innerHTML='<div class="llock-box">'+ic("lock")+"<h2>Grid Life</h2><p>Введите PIN</p>"+
-    '<input class="lpin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" aria-label="PIN, 4 цифры">'+
-    '<p class="llock-msg" aria-live="polite"></p>'+
+  lockEl.innerHTML='<div class="llock-box">'+ic("lock")+"<h2>Grid Life</h2>"+
+    '<p class="llock-bio">Вход по '+esc(bioName())+"</p>"+
+    '<div class="llock-pin"><p>Введите PIN</p>'+
+      '<input class="lpin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" aria-label="PIN, 4 цифры">'+
+      '<p class="llock-msg" aria-live="polite"></p></div>'+
+    (bioUsable()?'<button class="btn main" data-lbio="1">Войти по '+esc(bioName())+"</button>":"")+
+    '<button class="btn ghost" data-lpinshow="1">Ввести PIN</button>'+
     '<button class="btn ghost" data-lwork="1">Перейти в Grid Work</button>'+
     '<button class="lnk" data-lforgot="1">Забыли PIN?</button></div>';
   /* всё остальное на странице недоступно, пока экран закрыт */
@@ -1045,7 +1125,7 @@ function showLock(){
     if(inp.value.length<4) return;
     var pin=L.meta.pin;
     hashPin(inp.value,pin.salt).then(function(h){
-      if(h===pin.hash){unlock();return;}
+      if(h===pin.hash){pinUnlocked();return;}
       inp.value=""; lockFails++;
       if(lockFails<5){msg.textContent="Неверный PIN";return;}
       /* после пяти ошибок — пауза, чтобы PIN нельзя было подобрать перебором */
@@ -1054,17 +1134,33 @@ function showLock(){
     });
   });
   lockEl.addEventListener("click",function(e){
-    if(e.target.closest("[data-lwork]")) K.setMode("work");
-    else if(e.target.closest("[data-lforgot]")) forgotPin();
+    var t=e.target;
+    if(t.closest("[data-lbio]")) bioUnlock();
+    else if(t.closest("[data-lpinshow]")){if(bioAbort){bioAbort.abort();bioAbort=null;} lockState("pin");}
+    else if(t.closest("[data-lwork]")) K.setMode("work");
+    else if(t.closest("[data-lforgot]")) forgotPin();
   });
-  inp.focus();
+  if(bioUsable()) bioUnlock();
+  else{
+    if(L.meta.bio){bioTrouble="unavailable";msg.textContent="Вход по "+bioName()+" сейчас недоступен — войдите по PIN";}
+    lockState("pin");
+  }
 }
 function hideLock(){
   if(!lockEl) return;
+  if(bioAbort){bioAbort.abort();bioAbort=null;}
   lockEl.remove(); lockEl=null;
   inerted.forEach(function(el){el.inert=false;}); inerted=[];
 }
 function unlock(){L.unlocked=true;lockFails=0;hideLock();render();}
+/* Face ID не сработал, но PIN пустил: доступ не держим, а предлагаем настроить заново */
+function pinUnlocked(){
+  var trouble=bioTrouble; bioTrouble=null; unlock();
+  if(!trouble||!L.meta.bio) return;
+  if(trouble==="unavailable"||!L.bioOK)
+    K.flash("Вход по "+bioName()+" недоступен на этом устройстве. Входите по PIN или выключите его в настройках.");
+  else K.flash("Вход по "+bioName()+" не сработал. Настроить заново?",registerBio,"Настроить");
+}
 function forgotPin(){
   dialog("Забыли PIN?","Восстановить PIN нельзя. Его можно только сбросить вместе со всеми данными Grid Life на этом устройстве: "+
     "задачами, типами, файлами и настройками. Grid Work это не затронет.",
@@ -1172,6 +1268,10 @@ function settingsHTML(){
       '<div class="row">'+(L.meta.pin?'<button class="btn ghost" data-lpin="set">Сменить PIN</button>'+
           '<button class="btn ghost" data-lpin="off">Выключить PIN</button>'
         :'<button class="btn" data-lpin="set">Задать PIN</button>')+"</div>"+
+      (!L.bioOK?(L.meta.pin?'<p class="small">На этом устройстве нет Face ID, Touch ID или Windows Hello — вход только по PIN.</p>':"")
+        :L.meta.pin?toggle("data-lbiotoggle",!!L.meta.bio,"Входить по "+bioName(),
+          "PIN остаётся запасным способом. "+bioWhere()+" Если адрес сайта сменится, вход по "+bioName()+" нужно будет включить заново.")
+        :'<p class="small">Вход по '+bioName()+" можно включить после того, как вы зададите PIN: он нужен как запасной способ.</p>")+
       toggle("data-lopenlife",openLife(),"Открывать приложение в Grid Life","Иначе Grid откроется там, где вы были в прошлый раз."))+
     sec("storage","Хранилище",
       "<p>Задачи, типы и файлы Grid Life хранятся только на этом устройстве, в этом браузере. "+
@@ -1261,7 +1361,9 @@ function onSettingsClick(e){
   else if((b=t.closest("[data-lknew]"))) editKind(b,null);
   else if((b=t.closest("[data-lpin]"))){
     if(b.dataset.lpin==="set") setPin();
-    else if(confirm("Выключить PIN? Grid Life будет открываться без него.")){setMeta("pin",null);K.renderSettings();}
+    else if(confirm("Выключить PIN? Grid Life будет открываться без защиты"+(L.meta.bio?", вход по "+bioName()+" тоже выключится.":"."))){
+      setMeta("pin",null); setMeta("bio",null); K.renderSettings();
+    }
   }
   else if(t.closest("[data-lcleango]")) cleanDone(+$("[data-lclean]",e.currentTarget).value);
   else if(t.closest("[data-lwipe]")) askWipe();
@@ -1282,6 +1384,13 @@ function onSettingsChange(e){
     var off=offKinds().filter(function(id){return id!==t.dataset.lkon;});
     if(!t.checked) off.push(t.dataset.lkon);
     setMeta("offKinds",off); render(); K.renderSide(); return;
+  }
+  /* включение — прямо в нажатии: так Safari покажет Face ID */
+  if(t.matches("[data-lbiotoggle]")){
+    if(t.checked){registerBio();return;}
+    setMeta("bio",null); K.renderSettings(true);
+    K.flash("Вход по "+bioName()+" выключен. Запись «Grid Life» "+(apple()?"в «Паролях»":"в менеджере паролей")+" можно удалить вручную.");
+    return;
   }
   if(t.matches("[data-lopenlife]")){
     try{if(t.checked) localStorage.setItem("grid.openLife","1"); else localStorage.removeItem("grid.openLife");}catch(err){}

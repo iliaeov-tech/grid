@@ -1175,13 +1175,14 @@ function shown(c){return passes(c)||childrenOf(c.id).some(passes);}
 function visibleIn(colId){return cardsIn(colId).filter(shown);}
 
 /* ═════════ уведомления ═════════ */
-/* undo — что сделать по кнопке «Вернуть» (после удаления в корзину) */
+/* undo — что сделать по кнопке в подсказке: «Вернуть» после удаления в
+   корзину или своё действие с подписью label */
 var toastT;
-function flash(msg,undo){
+function flash(msg,undo,label){
   var el=$("#toast");
   if(!el){el=document.createElement("div");el.id="toast";el.className="toast";
     el.setAttribute("role","status");document.body.appendChild(el);}
-  el.innerHTML=esc(msg)+(undo?'<button class="toast-undo">Вернуть</button>':"");
+  el.innerHTML=esc(msg)+(undo?'<button class="toast-undo">'+esc(label||"Вернуть")+"</button>":"");
   if(undo) $(".toast-undo",el).onclick=function(){el.style.display="none";undo();};
   el.style.display="block";
   clearTimeout(toastT); toastT=setTimeout(function(){el.style.display="none";},undo?7000:3600);

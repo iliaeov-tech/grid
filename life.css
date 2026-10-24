@@ -156,6 +156,8 @@
   /* число и точки — одна группа по центру ячейки; место под точки есть
      всегда, поэтому числа в строке стоят на одной высоте */
   .mc{min-height:62px;padding:3px 2px;align-items:center;justify-content:center;gap:4px}
+  /* число на 3 px выше, точки на месте: высота группы та же */
+  .mc .mc-n{margin:-3px 0 3px}
   .mc .mc-items{display:none}
   .mc .mc-dots{display:flex;gap:3px;justify-content:center;height:6px}
   .mc-dots i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--ki,var(--accent))}

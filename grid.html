@@ -111,7 +111,10 @@ button{cursor:pointer;background:none;border:none;padding:0}
 .mark{font-family:var(--f-dis);font-weight:600;font-size:15px;letter-spacing:-.02em;
   color:var(--accent);white-space:nowrap;display:inline-flex;align-items:center;gap:7px;
   padding:4px 6px;user-select:none;-webkit-user-select:none}
-.mark::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}
+/* значок режима после названия: портфель у Work, листок у Life */
+.mark-ic{display:inline-flex}
+.mark-ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round}
 .rail-sep{width:1px;height:22px;background:var(--line-2);flex:none}
 .brand{display:flex;align-items:center;gap:4px;flex:none}
 /* переключатель режимов в духе iPhone: слева Work, справа Life */
@@ -119,11 +122,8 @@ button{cursor:pointer;background:none;border:none;padding:0}
   background:var(--accent);box-shadow:inset 0 0 0 1px rgba(33,38,57,.06)}
 .mode-switch::before{content:"";position:absolute;inset:-8px -4px}
 .mode-switch .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;
-  box-shadow:0 1px 3px rgba(33,38,57,.3);display:grid;place-items:center;color:var(--accent);
-  transition:transform .25s cubic-bezier(.32,.72,.3,1)}
+  box-shadow:0 1px 3px rgba(33,38,57,.3);transition:transform .25s cubic-bezier(.32,.72,.3,1)}
 :root[data-mode="life"] .mode-switch .knob{transform:translateX(32px)}
-.mode-switch svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.2;
-  stroke-linecap:round;stroke-linejoin:round}
 .mode-in{animation:modeIn .24s cubic-bezier(.32,.72,.3,1)}
 @keyframes modeIn{from{opacity:0;transform:translateY(6px)}}
 
@@ -859,7 +859,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
       <button class="icon-btn" id="btnSide" title="Боковая панель" aria-label="Боковая панель" aria-controls="side" aria-expanded="false">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"></rect><path d="M9.5 4v16"></path><path d="M13.5 10l2 2-2 2"></path></svg>
       </button>
-      <span class="mark" id="logo"><span>Grid</span><span id="modeName">Work</span></span>
+      <span class="mark" id="logo"><span>Grid</span><span id="modeName">Work</span><span class="mark-ic" id="modeIcon"></span></span>
       <button class="mode-switch" id="modeSwitch" role="switch" aria-checked="false" aria-label="Личный режим Grid Life"><span class="knob"></span></button>
     </div>
     <span class="rail-sep work-only"></span>
@@ -3825,7 +3825,7 @@ function setMode(m){
   var sw=$("#modeSwitch");
   sw.setAttribute("aria-checked",String(life));
   sw.title=life?"Перейти в Grid Work":"Перейти в Grid Life";
-  $(".knob",sw).innerHTML=ic(life?"leaf":"briefcase");
+  $("#modeIcon").innerHTML=ic(life?"leaf":"briefcase");
   $("#btnSide").title=life?"Календарь и типы задач":"Проекты";
   $("#btnSide").setAttribute("aria-label",life?"Календарь и типы задач":"Проекты");
   sideEl.setAttribute("aria-label",life?"Grid Life":"Проекты");

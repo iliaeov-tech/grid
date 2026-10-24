@@ -1453,7 +1453,8 @@ function toggleDone(id){
   var target=next&&!c.parentId?doneTarget(column(c.columnId)):null;
   if(!target){patchCard(id,patch);return;}
   moveCard(id,target.id,endOf(target.id),patch);
-  if(target.projectId!==S.project) flash("Задача перенесена в «"+colPath(target)+"»");
+  /* экран за задачей не едет — говорим, куда она перенесена */
+  flash("Перенесено в «"+(target.projectId!==S.project?colPath(target):target.title)+"»");
 }
 function newCard(o){
   var pid=o.projectId||S.project,st=startStatus(pid),now=Date.now();
@@ -2048,9 +2049,17 @@ function renderBoard(){
       : "<p>Колонок пока нет. Их добавят владелец или редакторы проекта.</p>")+"</div>";
     return;
   }
-  mainEl.innerHTML='<div class="board" id="board">'+list.map(trackHTML).join("")+
+  /* доска перерисовывается целиком, поэтому прокрутку доски и колонок
+     сохраняем сами — иначе после любой правки экран прыгает к первой колонке */
+  var old=$("#board"),keep=old&&old.dataset.project===S.project?{left:old.scrollLeft,top:{}}:null;
+  if(keep) $$("[data-body]",old).forEach(function(b){keep.top[b.dataset.body]=b.scrollTop;});
+  mainEl.innerHTML='<div class="board" id="board" data-project="'+esc(S.project)+'">'+list.map(trackHTML).join("")+
     (ed?'<button class="add-track" data-addcol="1">'+
     '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"><path d="M12 5v14M5 12h14"></path></svg>Колонка</button>':"")+"</div>";
+  if(!keep) return;
+  var board=$("#board");
+  board.scrollLeft=keep.left;
+  $$("[data-body]",board).forEach(function(b){if(keep.top[b.dataset.body]) b.scrollTop=keep.top[b.dataset.body];});
 }
 
 /* ═════════ диаграмма Ганта ═════════ */

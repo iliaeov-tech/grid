@@ -29,7 +29,11 @@ var WEEK_MS=7*864e5;
 function today(){return K.todayISO();}
 function addDays(s,n){var d=K.parseISO(s);d.setDate(d.getDate()+n);return K.iso(d);}
 function addMonths(s,n){var d=K.parseISO(s);d.setDate(1);d.setMonth(d.getMonth()+n);return K.iso(d);}
+/* понедельник недели — по нему считаются повторы (дни повтора: пн=0) */
 function weekStart(s){var d=K.parseISO(s);d.setDate(d.getDate()-(d.getDay()+6)%7);return K.iso(d);}
+/* первый день недели на экране — из настроек (понедельник или воскресенье) */
+function shownWeek(s){var d=K.parseISO(s),ws=lp().weekStart;d.setDate(d.getDate()-(d.getDay()-ws+7)%7);return K.iso(d);}
+function dayOrder(){return lp().weekStart===0?[6,0,1,2,3,4,5]:[0,1,2,3,4,5,6];}
 function wd(s){return WEEKDAYS[(K.parseISO(s).getDay()+6)%7];}
 function longDate(s){var d=K.parseISO(s);return d.getDate()+" "+MONTHS_GEN[d.getMonth()];}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
@@ -37,6 +41,12 @@ function relDay(s){var t=today();return s===t?"Сегодня":s===addDays(t,1)?
 function minutes(t){var p=t.split(":");return (+p[0])*60+(+p[1]);}
 function hhmm(m){return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");}
 function pad(n){return String(n).padStart(2,"0");}
+/* время на экране: 14:00 или 2:00 PM — по настройке */
+function fmtTime(t){
+  if(!t||lp().h24) return t;
+  var m=minutes(t);
+  return (Math.floor(m/60)%12||12)+":"+pad(m%60)+(m<720?" AM":" PM");
+}
 
 /* ═════════ хранилище на устройстве ═════════ */
 var db=null;
@@ -94,6 +104,11 @@ function setMeta(key,value){
   L.meta[key]=value;
   saved(write("meta",{key:key,value:value,updatedAt:Date.now()}));
 }
+/* настройки Grid Life живут на этом устройстве, вместе с задачами.
+   view "last" — открывать вид, на котором закончили */
+var LPREFS={view:"last",weekStart:1,h24:true,duration:0,overdue:"block",hidePastDone:false,backupEvery:"week"};
+function lp(){return Object.assign({},LPREFS,L.meta.prefs||{});}
+function setPref(k,v){var p=lp();p[k]=v;setMeta("prefs",p);}
 function putTask(t){touch(t);saved(write("tasks",t));askPersist();}
 /* постоянное хранение просим при первой записи: без него браузер может
    очистить данные, когда на устройстве кончается место */
@@ -112,8 +127,14 @@ function checkPersist(){
 function live(){return L.tasks.filter(function(t){return !t.deletedAt;});}
 function taskById(id){return K.find(L.tasks,id);}
 function ownKinds(){return L.kinds.filter(function(k){return !k.deletedAt;}).sort(K.byOrder);}
-function kindsAll(){return LIFE_KINDS.concat(ownKinds());}
-function kindOf(id){return id?K.find(LIFE_KINDS,id)||K.find(ownKinds(),id):null;}
+/* стандартные типы можно переименовать и перекрасить (kindEdits) и убрать
+   из выбора (offKinds); у задач с таким типом он остаётся */
+function stdKinds(){var ed=L.meta.kindEdits||{};return LIFE_KINDS.map(function(k){return Object.assign({},k,ed[k.id]);});}
+function offKinds(){return L.meta.offKinds||[];}
+function kindsAll(withOff){
+  return stdKinds().filter(function(k){return withOff||offKinds().indexOf(k.id)<0;}).concat(ownKinds());
+}
+function kindOf(id){return id?K.find(stdKinds(),id)||K.find(ownKinds(),id):null;}
 function hiddenKinds(){return L.meta.hidden||[];}
 function visible(t){return hiddenKinds().indexOf(kindOf(t.kind)?t.kind:"")<0;}
 function filesOf(id){return L.files.filter(function(f){return f.taskId===id&&!f.deletedAt;});}
@@ -218,11 +239,13 @@ function byTime(a,b){
   return prioRank(b.t)-prioRank(a.t)||String(a.t.title).localeCompare(String(b.t.title),"ru");
 }
 function itemsBetween(from,to){
-  var out=[];
+  var out=[],td=today(),hide=lp().hidePastDone;
+  /* по настройке выполненное в прошедших днях не показываем */
+  function add(i){if(!(hide&&i.done&&i.date<td)) out.push(i);}
   live().forEach(function(t){
     if(!t.date) return;
-    if(t.repeat) occurrencesIn(t,from,to).forEach(function(i){if(visible(i.t)) out.push(i);});
-    else if(visible(t)&&t.date>=from&&t.date<=to) out.push(item(t,t.date));
+    if(t.repeat) occurrencesIn(t,from,to).forEach(function(i){if(visible(i.t)) add(i);});
+    else if(visible(t)&&t.date>=from&&t.date<=to) add(item(t,t.date));
   });
   return out.sort(byTime);
 }
@@ -327,17 +350,18 @@ function deleteOcc(t,orig,scope){
   }else softDelete(t);
   render();
 }
-/* вопрос как в Google Календаре; «Отмена» и Escape возвращают null */
-function askScope(title,withOne){
+/* Окно с вопросом. buttons — [значение, подпись, класс]; пустое значение —
+   «Отмена». pin — ещё поле для четырёх цифр: окно вернёт их, как только
+   они набраны. «Отмена» и Escape возвращают null. */
+function dialog(title,text,buttons,pin){
   return new Promise(function(res){
     var box=document.createElement("div");
     box.className="ldialog"; box.setAttribute("role","dialog"); box.setAttribute("aria-modal","true");
     box.setAttribute("aria-label",title);
-    box.innerHTML='<div class="ldialog-box"><h3>'+esc(title)+"</h3>"+
-      (withOne?'<button class="btn ghost" data-sc="one">Только эту</button>':"")+
-      '<button class="btn ghost" data-sc="next">Эту и последующие</button>'+
-      '<button class="btn ghost" data-sc="all">Все</button>'+
-      '<button class="btn ghost cancel" data-sc="">Отмена</button></div>';
+    box.innerHTML='<div class="ldialog-box"><h3>'+esc(title)+"</h3>"+(text?"<p>"+esc(text)+"</p>":"")+
+      (pin?'<input class="lpin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" aria-label="PIN, 4 цифры">':"")+
+      buttons.map(function(b){
+        return '<button class="btn '+(b[2]||"ghost")+(b[0]?"":" cancel")+'" data-sc="'+b[0]+'">'+esc(b[1])+"</button>";}).join("")+"</div>";
     document.body.appendChild(box);
     function done(v){box.remove();document.removeEventListener("keydown",onKey,true);res(v||null);}
     function onKey(e){if(e.key==="Escape"){e.preventDefault();e.stopPropagation();done(null);}}
@@ -346,8 +370,17 @@ function askScope(title,withOne){
       var b=e.target.closest("[data-sc]");
       if(b) done(b.dataset.sc); else if(e.target===box) done(null);
     });
-    $("button",box).focus();
+    var inp=$(".lpin",box);
+    if(inp) inp.addEventListener("input",function(){
+      inp.value=inp.value.replace(/\D/g,"").slice(0,4);
+      if(inp.value.length===4) done(inp.value);
+    });
+    (inp||$("button",box)).focus();
   });
+}
+/* вопрос как в Google Календаре */
+function askScope(title,withOne){
+  return dialog(title,"",(withOne?[["one","Только эту"]]:[]).concat([["next","Эту и последующие"],["all","Все"],["","Отмена"]]));
 }
 
 /* ═════════ отрисовка ═════════ */
@@ -356,7 +389,7 @@ function viewTitle(){
   if(L.view==="list") return "Ближайшие дни";
   if(L.view==="day") return (relDay(c)?relDay(c)+", ":"")+wd(c)+", "+longDate(c);
   if(L.view==="week"){
-    var s=K.parseISO(weekStart(c)),e=K.parseISO(addDays(weekStart(c),6));
+    var s=K.parseISO(shownWeek(c)),e=K.parseISO(addDays(shownWeek(c),6));
     return s.getMonth()===e.getMonth()?s.getDate()+"–"+e.getDate()+" "+MONTHS_GEN[e.getMonth()]
       :s.getDate()+" "+K.MONTHS[s.getMonth()]+" – "+e.getDate()+" "+K.MONTHS[e.getMonth()];
   }
@@ -376,8 +409,8 @@ function toolbarHTML(){
 function kindStyle(t){var k=kindOf(t.kind);return k&&k.color?K.tint(k.color):"";}
 function rowHTML(it,od){
   var t=it.t,k=kindOf(t.kind),pr=t.priority||"med",nf=filesOf(t.id).length;
-  var when=!it.date?"":od?K.shortDate(K.parseISO(it.date))+(t.time?" "+t.time:"")
-    :t.time?t.time+(t.end?"–"+t.end:""):"весь день";
+  var when=!it.date?"":od?K.shortDate(K.parseISO(it.date))+(t.time?" "+fmtTime(t.time):"")
+    :t.time?fmtTime(t.time)+(t.end?"–"+fmtTime(t.end):""):"весь день";
   var meta=(k?K.kindChip(k):"")+
     (pr==="high"||pr==="urgent"?'<span class="chip prio loud" style="--pc:'+K.prioVar(pr)+";--pcs:"+K.prioSoft(pr)+'">'+
       '<span class="pip"></span>'+(pr==="urgent"?"Срочно":"Высокий")+"</span>":"")+
@@ -398,10 +431,12 @@ function daySectionHTML(d,items){
     (items.length?items.map(function(i){return rowHTML(i,false);}).join("")
       :'<button class="lempty" data-lnew="'+d+'">Задач нет — нажмите, чтобы добавить</button>')+"</section>";
 }
+/* напоминание о копии — раз в неделю или в месяц, по настройке */
 function backupDue(){
-  if(!live().length) return false;
+  var every=lp().backupEvery;
+  if(every==="never"||!live().length) return false;
   var last=Math.max(L.meta.lastBackupAt||0,L.meta.backupSnooze||0,L.meta.firstUseAt||0);
-  return Date.now()-last>WEEK_MS;
+  return Date.now()-last>(every==="month"?30*864e5:WEEK_MS);
 }
 function listHTML(){
   var t=today(),h="",od=overdue(),to=addDays(t,L.listDays-1),by={};
@@ -455,12 +490,12 @@ function blockHTML(x){
   var t=x.i.t;
   return '<button class="lblk'+(x.i.done?" done":"")+'" data-lopen="'+esc(x.i.key)+'" style="top:'+(x.s*HH/60)+"px;height:"+
     ((x.e-x.s)*HH/60-2)+"px;left:calc("+(x.col*100/x.cols)+"% + 2px);width:calc("+(100/x.cols)+"% - 4px);"+kindStyle(t)+'">'+
-    "<b>"+esc(t.title)+"</b><span>"+t.time+(t.end?"–"+t.end:"")+"</span></button>";
+    "<b>"+esc(t.title)+"</b><span>"+fmtTime(t.time)+(t.end?"–"+fmtTime(t.end):"")+"</span></button>";
 }
 function gridHTML(dates,cls){
-  var t=today(),by={},hours="";
+  var t=today(),by={},hours="",h24=lp().h24;
   itemsBetween(dates[0],dates[dates.length-1]).forEach(function(i){(by[i.date]=by[i.date]||[]).push(i);});
-  for(var h=1;h<24;h++) hours+='<span style="top:'+h*HH+'px">'+pad(h)+"<i>:00</i></span>";
+  for(var h=1;h<24;h++) hours+='<span style="top:'+h*HH+'px">'+(h24?pad(h)+"<i>:00</i>":(h%12||12)+"<i>"+(h<12?" AM":" PM")+"</i>")+"</span>";
   var now=new Date(),nowTop=(now.getHours()*60+now.getMinutes())*HH/60;
   return '<div class="lgrid '+cls+'" style="--days:'+dates.length+";--hh:"+HH+'px">'+
     '<div class="lg-row lg-head"><div></div>'+dates.map(function(d){
@@ -476,7 +511,7 @@ function gridHTML(dates,cls){
     "</div></div></div>";
 }
 function monthHTML(){
-  var c=L.cursor,first=c.slice(0,8)+"01",start=weekStart(first),t=today(),sel=L.selected||t,by={},cells="";
+  var c=L.cursor,first=c.slice(0,8)+"01",start=shownWeek(first),t=today(),sel=L.selected||t,by={},cells="";
   itemsBetween(start,addDays(start,41)).forEach(function(i){(by[i.date]=by[i.date]||[]).push(i);});
   for(var n=0;n<42;n++){
     var d=addDays(start,n),list=by[d]||[],out=d.slice(0,7)!==c.slice(0,7);
@@ -488,12 +523,12 @@ function monthHTML(){
       '<span class="mc-dots" aria-hidden="true">'+list.slice(0,4).map(function(i){
         return '<i style="'+kindStyle(i.t)+'"></i>';}).join("")+"</span></div>";
   }
-  return '<div class="lv-body"><div class="lmonth"><div class="lm-week">'+WEEKDAYS.map(function(w){return "<span>"+w+"</span>";}).join("")+
+  return '<div class="lv-body"><div class="lmonth"><div class="lm-week">'+dayOrder().map(function(i){return "<span>"+WEEKDAYS[i]+"</span>";}).join("")+
     '</div><div class="lm-grid">'+cells+'</div><div class="lm-agenda">'+daySectionHTML(sel,itemsBetween(sel,sel))+"</div></div></div>";
 }
 function bodyHTML(){
   if(L.view==="day") return gridHTML([L.cursor],"day");
-  if(L.view==="week"){var s=weekStart(L.cursor),ds=[];for(var i=0;i<7;i++)ds.push(addDays(s,i));return gridHTML(ds,"week");}
+  if(L.view==="week"){var s=shownWeek(L.cursor),ds=[];for(var i=0;i<7;i++)ds.push(addDays(s,i));return gridHTML(ds,"week");}
   if(L.view==="month") return monthHTML();
   return listHTML();
 }
@@ -628,6 +663,11 @@ function setField(name,value){
   edit(name,value);
   render(); repaintPanel();
 }
+/* окончание новой задачи по длительности из настроек; не позже полуночи */
+function endFor(time){
+  var d=lp().duration,e=time?minutes(time)+d:0;
+  return d&&e<24*60?hhmm(e):"";
+}
 
 /* повтор: готовые варианты, свой интервал, дни недели и окончание */
 var REPEATS=[["none","Не повторять"],["day","Каждый день"],["week","Каждую неделю"],["2week","Каждые 2 недели"],
@@ -656,8 +696,8 @@ function repeatHTML(t){
     '<select data-lrunit="1" aria-label="Единица интервала">'+[["day",plural(n,"день","дня","дней")],["week",plural(n,"неделю","недели","недель")],
       ["month",plural(n,"месяц","месяца","месяцев")],["year",plural(n,"год","года","лет")]].map(function(u){
       return '<option value="'+u[0]+'"'+(r.freq===u[0]?" selected":"")+">"+u[1]+"</option>";}).join("")+"</select></div>";
-  if(r.freq==="week") h+='<div class="wdays" role="group" aria-label="Дни недели">'+WEEKDAYS.map(function(w,i){
-    return '<button data-lwd="'+i+'" aria-pressed="'+((r.days||[]).indexOf(i)>=0)+'">'+w+"</button>";}).join("")+"</div>";
+  if(r.freq==="week") h+='<div class="wdays" role="group" aria-label="Дни недели">'+dayOrder().map(function(i){
+    return '<button data-lwd="'+i+'" aria-pressed="'+((r.days||[]).indexOf(i)>=0)+'">'+WEEKDAYS[i]+"</button>";}).join("")+"</div>";
   h+='<div class="rep-end"><span class="lbl">Окончание</span><div class="quick">'+
       '<button data-lrend="never" aria-pressed="'+(r.end==="never")+'">Бессрочно</button>'+
       '<button data-lrend="until" aria-pressed="'+(r.end==="until")+'">До даты</button>'+
@@ -672,6 +712,8 @@ function repeatHTML(t){
 }
 function panelHTML(){
   var t=cur(),isNew=!!P.draft,s=series(),allDay=!t.time,pr=t.priority||"med",fs=isNew?[]:filesOf(t.id),td=today(),tm=addDays(td,1);
+  /* тип, убранный из списка, у задачи всё равно виден */
+  var ks=kindsAll(); if(t.kind&&!K.find(ks,t.kind)&&kindOf(t.kind)) ks=ks.concat([kindOf(t.kind)]);
   var eyebrow=isNew?"Новая задача":(s?"Повтор · ":"")+(t.date?(relDay(t.date)?relDay(t.date)+", ":"")+longDate(t.date):"Без даты");
   var body='<div class="d-body"><div class="d-title-row">'+
       (isNew?"":'<button class="check" data-lpcheck="1" role="checkbox" aria-checked="'+(findItem(P.id+"|"+P.date)||{done:!!t.done}).done+
@@ -690,7 +732,7 @@ function panelHTML(){
           '<span>–</span><input type="time" data-lf="end" value="'+esc(t.end)+'" aria-label="Окончание, необязательно"></div>'+
           '<p class="hint">Окончание можно не указывать.</p>')+"</div>"+
       '<span class="lbl">Повтор</span><div class="ctl">'+repeatHTML(t)+"</div>"+
-      '<span class="lbl">Тип</span><div class="ctl"><div class="seg kinds">'+kindsAll().map(function(k){
+      '<span class="lbl">Тип</span><div class="ctl"><div class="seg kinds">'+ks.map(function(k){
           return '<button data-lkind="'+esc(k.id)+'" aria-pressed="'+(t.kind===k.id)+'" style="'+K.tint(k.color)+'">'+ic(k.icon)+esc(k.label)+"</button>";
         }).join("")+'<button class="add" data-lknew="1">'+ic("plus")+"Свой тип</button></div></div>"+
       '<span class="lbl">Приоритет</span><div class="ctl"><div class="seg">'+K.PRIOS.map(function(p){
@@ -758,7 +800,10 @@ panel.addEventListener("change",function(e){
   var t=e.target,task=cur(); if(!task) return;
   if(t.matches("[data-lallday]")){
     if(t.checked){edit("end","");setField("time","");}
-    else setField("time",task.date===today()?hhmm(Math.min(23,new Date().getHours()+1)*60):"09:00");
+    else{
+      var tm=task.date===today()?hhmm(Math.min(23,new Date().getHours()+1)*60):"09:00";
+      edit("end",endFor(tm)); setField("time",tm);
+    }
     return;
   }
   if(t.matches("[data-lf=date]")){
@@ -841,7 +886,14 @@ function dropFile(id){
 }
 
 /* ═════════ свои типы ═════════ */
+/* kind — свой тип, стандартный (тогда правка ложится в kindEdits) или null для нового */
 function editKind(anchor,kind,onCreate){
+  var std=kind&&K.find(LIFE_KINDS,kind.id),edits=L.meta.kindEdits||{};
+  function done(){render(); repaintPanel(); K.renderSide(); K.renderSettings();}
+  if(std) return K.typeEditor(anchor,{kind:kind,title:"Стандартный тип",
+    save:function(d){var e=Object.assign({},edits);e[kind.id]=d;setMeta("kindEdits",e);done();},
+    removeLabel:"Как было",
+    remove:edits[kind.id]?function(){var e=Object.assign({},edits);delete e[kind.id];setMeta("kindEdits",e);done();}:null});
   K.typeEditor(anchor,{kind:kind,title:kind?"Свой тип":"Новый тип задачи",
     save:function(d){
       if(kind){Object.assign(kind,d);saved(write("kinds",touch(kind)));}
@@ -852,14 +904,14 @@ function editKind(anchor,kind,onCreate){
         L.kinds.push(kind); saved(write("kinds",kind));
         if(onCreate) onCreate(kind.id);
       }
-      render(); repaintPanel(); K.renderSide();
+      done();
     },
     remove:kind?function(){
       var users=live().filter(function(t){return t.kind===kind.id;});
       if(!confirm("Удалить тип «"+kind.label+"»?"+(users.length?" Он снимется с задач: "+users.length+".":""))) return;
       users.forEach(function(t){t.kind="";putTask(t);});
       kind.deletedAt=Date.now(); saved(write("kinds",touch(kind)));
-      render(); repaintPanel(); K.renderSide();
+      done();
     }:null});
 }
 
@@ -871,14 +923,18 @@ function blobToBase64(b){
     r.readAsDataURL(b);
   });
 }
+/* в копию идут и настройки, кроме PIN: копию открывают и на другом устройстве */
+var BACKUP_META=["hidden","prefs","kindEdits","offKinds"];
 function exportBackup(){
   var files=L.files.filter(function(f){return !f.deletedAt&&f.blob;});
-  Promise.all(files.map(function(f){
+  return Promise.all(files.map(function(f){
     return blobToBase64(f.blob).then(function(data){
       var o=Object.assign({},f); delete o.blob; o.data=data; return o;});
   })).then(function(fs){
+    var settings={};
+    BACKUP_META.forEach(function(k){if(L.meta[k]!=null) settings[k]=L.meta[k];});
     var dump={app:"grid-life",version:1,exportedAt:new Date().toISOString(),
-      tasks:live(),kinds:ownKinds(),files:fs,settings:{hidden:hiddenKinds()}};
+      tasks:live(),kinds:ownKinds(),files:fs,settings:settings};
     var a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([JSON.stringify(dump)],{type:"application/json"}));
     a.download="grid-life-"+today()+".json";
@@ -887,7 +943,8 @@ function exportBackup(){
     setMeta("lastBackupAt",Date.now());
     render(); K.renderSettings();
     K.flash("Копия сохранена: "+a.download);
-  },function(e){K.flash("Не удалось собрать копию: "+(e&&e.message||""));});
+    return true;
+  },function(e){K.flash("Не удалось собрать копию: "+(e&&e.message||""));return false;});
 }
 function importBackup(){
   filePick.value=""; filePick.accept="application/json,.json";
@@ -907,7 +964,7 @@ function importBackup(){
       });
       return Promise.all([write("tasks",d.tasks,true),write("kinds",d.kinds||[],true),write("files",files,true)]).then(function(){
         L.tasks=d.tasks; L.kinds=d.kinds||[]; L.files=files;
-        setMeta("hidden",(d.settings&&d.settings.hidden)||[]);
+        BACKUP_META.forEach(function(k){if(d.settings&&d.settings[k]!=null) setMeta(k,d.settings[k]);});
         setMeta("lastBackupAt",Date.now());
         render(); K.renderSide(); K.renderSettings();
         K.flash("Копия восстановлена: задач — "+d.tasks.length);
@@ -925,7 +982,7 @@ function sideHTML(){
     return '<div class="prow"><button class="pick lk" data-lhide="'+esc(id)+'" aria-pressed="'+on+'" title="'+(on?"Скрыть":"Показать")+'">'+
       '<span class="lk-box" style="'+(k?K.tint(k.color):"")+'">'+(on?ic("tick"):"")+"</span>"+(k?ic(k.icon):ic("note"))+
       "<b>"+esc(label)+"</b></button>"+
-      (k&&!K.find(LIFE_KINDS,k.id)?'<button class="x" data-lkedit="'+esc(k.id)+'" aria-label="Изменить тип «'+esc(k.label)+'»">'+ic("pencil")+"</button>":"")+
+      (k?'<button class="x" data-lkedit="'+esc(k.id)+'" aria-label="Изменить тип «'+esc(k.label)+'»">'+ic("pencil")+"</button>":"")+
       "</div>";
   }
   return '<div class="side-head"><h2>Grid Life</h2>'+
@@ -944,28 +1001,204 @@ function sideHTML(){
 }
 var installEvt=null;
 window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();installEvt=e;K.renderSettings();});
+
+/* ═════════ PIN и экран блокировки ═════════ */
+/* PIN закрывает Grid Life от чужих глаз на этом устройстве. Это не
+   шифрование: в meta лежит только хеш PIN с солью, задачи — как были. */
+function hashPin(pin,salt){
+  return crypto.subtle.digest("SHA-256",new TextEncoder().encode(salt+":"+pin)).then(function(b){
+    return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,"0");}).join("");});
+}
+function setPin(){
+  if(!window.crypto||!crypto.subtle){K.flash("PIN работает только на защищённой странице (https)");return;}
+  dialog("Новый PIN","Четыре цифры. Его спросят при переходе в Grid Life и при открытии приложения.",[["","Отмена"]],true).then(function(a){
+    if(!a) return;
+    return dialog("Повторите PIN","",[["","Отмена"]],true).then(function(b){
+      if(!b) return;
+      if(a!==b){K.flash("PIN не совпали — попробуйте ещё раз");return;}
+      var salt=newId();
+      return hashPin(a,salt).then(function(h){
+        setMeta("pin",{salt:salt,hash:h}); L.unlocked=true;
+        K.renderSettings(); K.flash("PIN задан");
+      });
+    });
+  });
+}
+var lockEl=null,lockFails=0,inerted=[];
+function showLock(){
+  if(lockEl) return;
+  lockEl=document.createElement("div");
+  lockEl.className="llock"; lockEl.setAttribute("role","dialog"); lockEl.setAttribute("aria-modal","true");
+  lockEl.setAttribute("aria-label","Grid Life закрыт PIN-кодом");
+  lockEl.innerHTML='<div class="llock-box">'+ic("lock")+"<h2>Grid Life</h2><p>Введите PIN</p>"+
+    '<input class="lpin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" aria-label="PIN, 4 цифры">'+
+    '<p class="llock-msg" aria-live="polite"></p>'+
+    '<button class="btn ghost" data-lwork="1">Перейти в Grid Work</button>'+
+    '<button class="lnk" data-lforgot="1">Забыли PIN?</button></div>';
+  /* всё остальное на странице недоступно, пока экран закрыт */
+  inerted=$$("body>*").filter(function(el){return !el.inert;});
+  inerted.forEach(function(el){el.inert=true;});
+  document.body.appendChild(lockEl);
+  var inp=$(".lpin",lockEl),msg=$(".llock-msg",lockEl);
+  inp.addEventListener("input",function(){
+    inp.value=inp.value.replace(/\D/g,"").slice(0,4);
+    if(inp.value.length<4) return;
+    var pin=L.meta.pin;
+    hashPin(inp.value,pin.salt).then(function(h){
+      if(h===pin.hash){unlock();return;}
+      inp.value=""; lockFails++;
+      if(lockFails<5){msg.textContent="Неверный PIN";return;}
+      /* после пяти ошибок — пауза, чтобы PIN нельзя было подобрать перебором */
+      inp.disabled=true; msg.textContent="Слишком много попыток. Подождите 30 секунд.";
+      setTimeout(function(){lockFails=0;inp.disabled=false;msg.textContent="";inp.focus();},30000);
+    });
+  });
+  lockEl.addEventListener("click",function(e){
+    if(e.target.closest("[data-lwork]")) K.setMode("work");
+    else if(e.target.closest("[data-lforgot]")) forgotPin();
+  });
+  inp.focus();
+}
+function hideLock(){
+  if(!lockEl) return;
+  lockEl.remove(); lockEl=null;
+  inerted.forEach(function(el){el.inert=false;}); inerted=[];
+}
+function unlock(){L.unlocked=true;lockFails=0;hideLock();render();}
+function forgotPin(){
+  dialog("Забыли PIN?","Восстановить PIN нельзя. Его можно только сбросить вместе со всеми данными Grid Life на этом устройстве: "+
+    "задачами, типами, файлами и настройками. Grid Work это не затронет.",
+    [["reset","Сбросить PIN и удалить данные","danger"],["","Отмена"]]).then(function(v){
+    if(v!=="reset") return;
+    return dialog("Точно удалить все данные Grid Life?","Отменить будет нельзя.",[["yes","Удалить всё","danger"],["","Отмена"]]).then(function(y){
+      if(y==="yes") return wipeAll().then(function(){unlock();K.flash("PIN сброшен, данные Grid Life удалены");});
+    });
+  });
+}
+
+/* ═════════ хранилище: очистка и удаление ═════════ */
+/* всё Grid Life на этом устройстве: задачи, типы, файлы, настройки и PIN */
+function wipeAll(){
+  return Promise.all(["tasks","kinds","files","meta"].map(function(s){return write(s,[],true);})).then(function(){
+    L.tasks=[]; L.kinds=[]; L.files=[]; L.meta={};
+    setMeta("firstUseAt",Date.now());
+    try{localStorage.removeItem("grid.openLife");localStorage.removeItem("grid.life.view");}catch(e){}
+    L.view="list"; render(); K.renderSide(); K.renderSettings();
+  });
+}
+function askWipe(){
+  dialog("Удалить все данные Grid Life","Задачи, типы, файлы и настройки Grid Life на этом устройстве удалятся. Grid Work это не затронет. "+
+    "Сначала сохранить резервную копию?",
+    [["copy","Сохранить копию и продолжить"],["go","Удалить без копии","danger"],["","Отмена"]]).then(function(v){
+    if(!v) return;
+    return (v==="copy"?exportBackup():Promise.resolve(true)).then(function(ok){
+      if(!ok) return;                     /* копия не сохранилась — ничего не удаляем */
+      return dialog("Точно удалить все данные Grid Life?","Отменить будет нельзя.",[["yes","Удалить всё","danger"],["","Отмена"]]);
+    }).then(function(y){if(y==="yes") return wipeAll().then(function(){K.flash("Данные Grid Life удалены");});});
+  });
+}
+var CLEAN=[[30,"месяц"],[90,"три месяца"],[180,"полгода"],[365,"год"]];
+/* выполненные обычные задачи старше срока; повторяющиеся не трогаем — это серии */
+function oldDone(days){
+  var edge=addDays(today(),-days),ms=Date.now()-days*864e5;
+  return live().filter(function(t){return t.done&&!t.repeat&&(t.date?t.date<edge:(t.updatedAt||0)<ms);});
+}
+function cleanDone(days){
+  var list=oldDone(days),label=CLEAN.filter(function(c){return c[0]===days;})[0][1];
+  if(!list.length){K.flash("Выполненных задач старше, чем "+label+", нет");return;}
+  if(!confirm("Удалить выполненные задачи старше, чем "+label+": "+list.length+"? Повторяющиеся задачи не трогаем.")) return;
+  list.forEach(softDelete); render(); K.renderSettings();
+  K.flash("Удалено задач: "+list.length);
+}
+/* по настройке просроченное само переезжает на сегодня */
+function autoMove(){
+  if(!L.ready||lp().overdue!=="move") return;
+  var keys=overdue().map(function(i){return i.key;});
+  if(keys.length) moveToToday(keys);
+}
+function openLife(){try{return localStorage.getItem("grid.openLife")==="1";}catch(e){return false;}}
+/* сколько места даёт браузер; спрашиваем не чаще раза в 10 секунд */
+function estimate(){
+  if(!navigator.storage||!navigator.storage.estimate||Date.now()-(L.estAt||0)<10000) return;
+  L.estAt=Date.now();
+  navigator.storage.estimate().then(function(e){L.estimate=e;K.renderSettings();},function(){});
+}
+
+/* ═════════ настройки ═════════ */
+function sec(id,title,html){
+  return '<section class="set" data-lset="'+id+'"'+(id==="calendar"?"":' style="margin-top:22px"')+'><div class="sect-h"><h3>'+
+    esc(title)+"</h3></div>"+html+"</section>";
+}
+function pick(key,label,opts){
+  var p=lp();
+  return '<label class="opt"><span>'+label+'</span><select class="in" data-lpref="'+key+'">'+opts.map(function(o){
+    return '<option value="'+o[0]+'"'+(String(p[key])===String(o[0])?" selected":"")+">"+o[1]+"</option>";}).join("")+"</select></label>";
+}
+function toggle(attr,on,title,note){
+  return '<label class="switch"><input type="checkbox" '+attr+(on?" checked":"")+"><span><b>"+title+"</b>"+
+    (note?"<small>"+note+"</small>":"")+"</span></label>";
+}
 function settingsHTML(){
-  var last=L.meta.lastBackupAt;
+  var p=lp(),last=L.meta.lastBackupAt,off=offKinds(),est=L.estimate;
+  var dataSize=JSON.stringify(live()).length+JSON.stringify(ownKinds()).length;
+  var filesSize=L.files.filter(function(f){return !f.deletedAt;}).reduce(function(s,f){return s+(f.size||0);},0);
+  var pct=est&&est.quota?Math.min(100,Math.round(est.usage/est.quota*100)):0;
+  estimate();
   return K.drawerHead("Настройки Grid Life")+'<div class="d-body">'+
-    '<section class="set"><div class="sect-h"><h3>Где хранятся данные</h3></div>'+
+    sec("calendar","Календарь",
+      pick("view","Вид при открытии",[["last","как в прошлый раз"],["list","Список"],["day","День"],["week","Неделя"],["month","Месяц"]])+
+      pick("weekStart","Неделя начинается с",[[1,"понедельника"],[0,"воскресенья"]])+
+      pick("duration","Длительность новой задачи",[[0,"без окончания"],[15,"15 минут"],[30,"30 минут"],[45,"45 минут"],
+        [60,"1 час"],[90,"1,5 часа"],[120,"2 часа"]])+
+      pick("overdue","Просроченные задачи",[["block","в блоке «Просрочено»"],["move","переезжают на сегодня"]])+
+      toggle('data-lpref="h24"',p.h24,"24-часовой формат","Иначе время показывается как 2:00 PM.")+
+      toggle('data-lpref="hidePastDone"',p.hidePastDone,"Скрывать выполненное в прошедших днях",
+        "В днях, неделях и месяцах остаётся только невыполненное."))+
+    sec("types","Типы задач",
+      "<div>"+kindsAll(true).map(function(k){
+        var std=!!K.find(LIFE_KINDS,k.id),on=off.indexOf(k.id)<0;
+        return '<div class="mrow">'+(std?'<label class="switch mini"><input type="checkbox" data-lkon="'+esc(k.id)+'"'+(on?" checked":"")+
+            ' aria-label="Показывать тип «'+esc(k.label)+'» в списке"><span></span></label>':'<span class="mini-gap"></span>')+
+          K.kindChip(k)+'<span class="sp"></span><button class="x ed" data-lkedit="'+esc(k.id)+'" aria-label="Изменить тип «'+
+          esc(k.label)+'»" title="Изменить">'+ic("pencil")+"</button></div>";
+      }).join("")+"</div>"+
+      '<div class="row"><button class="btn ghost" data-lknew="1">+ Свой тип</button></div>'+
+      '<p class="small">Стандартные типы можно переименовать, перекрасить и убрать из списка — у задач они останутся. '+
+        "Свой тип удаляется в окне правки.</p>")+
+    sec("privacy","Приватность",
+      "<p>PIN закрывает Grid Life от посторонних: его спросят при переходе в Grid Life и при открытии приложения.</p>"+
+      '<p class="small">Это защита экрана, а не шифрование: задачи остаются в браузере как есть, и человек, '+
+        "который разбирается в устройствах, сможет их прочитать.</p>"+
+      '<div class="row">'+(L.meta.pin?'<button class="btn ghost" data-lpin="set">Сменить PIN</button>'+
+          '<button class="btn ghost" data-lpin="off">Выключить PIN</button>'
+        :'<button class="btn" data-lpin="set">Задать PIN</button>')+"</div>"+
+      toggle("data-lopenlife",openLife(),"Открывать приложение в Grid Life","Иначе Grid откроется там, где вы были в прошлый раз."))+
+    sec("storage","Хранилище",
       "<p>Задачи, типы и файлы Grid Life хранятся только на этом устройстве, в этом браузере. "+
-      "Ничего не отправляется на сервер, вход не нужен, всё работает без интернета.</p>"+
+        "Ничего не отправляется на сервер, вход не нужен, всё работает без интернета.</p>"+
+      '<div class="meter-h"><span>Задачи и типы: '+K.fmtSize(dataSize)+" · файлы: "+K.fmtSize(filesSize)+"</span></div>"+
+      (est&&est.quota?'<div class="meter" role="progressbar" aria-label="Занято места в браузере" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+
+          pct+'"><i style="width:'+pct+'%"></i></div>'+
+        '<p class="small">Браузер даёт этому сайту до '+K.fmtSize(est.quota)+", сейчас занято "+K.fmtSize(est.usage)+
+          " — вместе с Grid Work и копией приложения для работы без сети.</p>":"")+
       (L.persisted===true?'<p class="small">Браузер разрешил постоянное хранение и не удалит данные сам.</p>'
         :L.persisted===false?'<p class="small">Браузер пока не обещал хранить данные постоянно: при нехватке места он может '+
           "их очистить. Сохраняйте резервные копии.</p>"+
           '<div class="row"><button class="btn ghost" data-lpersist="1">Попросить постоянное хранение</button></div>':"")+
-    "</section>"+
-    '<section class="set" style="margin-top:22px"><div class="sect-h"><h3>Резервная копия</h3></div>'+
-      "<p>Один файл со всеми задачами, типами и файлами. Его можно перенести на другое устройство и восстановить там.</p>"+
-      '<p class="small">'+(last?"Последняя копия: "+esc(K.fmtWhen(last)):"Копий ещё не было.")+"</p>"+
+      "<p><b>Резервная копия.</b> "+(last?"Последняя — "+esc(K.fmtWhen(last))+".":"Копий ещё не было.")+
+        " Один файл со всеми задачами, типами, файлами и настройками — его можно перенести на другое устройство.</p>"+
       '<div class="row"><button class="btn" data-lexport="1">Сохранить копию</button>'+
         '<button class="btn ghost" data-limport="1">Восстановить из файла</button></div>'+
-    "</section>"+
-    '<section class="set" style="margin-top:22px"><div class="sect-h"><h3>На главный экран</h3></div>'+
+      pick("backupEvery","Напоминать о копии",[["week","раз в неделю"],["month","раз в месяц"],["never","не напоминать"]])+
+      '<div class="lclean"><span>Удалить выполненные задачи старше, чем</span><div class="row"><select class="in" data-lclean="1" aria-label="Срок">'+
+        CLEAN.map(function(c){return '<option value="'+c[0]+'">'+c[1]+"</option>";}).join("")+"</select>"+
+        '<button class="btn ghost" data-lcleango="1">Удалить</button></div></div>'+
+      '<div class="row"><button class="btn danger" data-lwipe="1">Удалить все данные Grid Life</button></div>')+
+    sec("install","На главный экран",
       "<p>Grid можно установить как приложение: он откроется с главного экрана и без интернета.</p>"+
       (installEvt?'<div class="row"><button class="btn" data-linstall="1">Установить</button></div>'
-        :'<p class="small">iPhone: Safari → «Поделиться» → «На экран Домой». Android и компьютер: меню браузера → «Установить приложение».</p>')+
-    "</section></div>";
+        :'<p class="small">iPhone: Safari → «Поделиться» → «На экран Домой». Android и компьютер: меню браузера → «Установить приложение».</p>'))+
+    "</div>";
 }
 
 /* ═════════ события ═════════ */
@@ -974,7 +1207,7 @@ function fabDate(){
   var t=today();
   if(L.view==="day") return L.cursor;
   if(L.view==="month") return L.selected||t;
-  if(L.view==="week"){var s=weekStart(L.cursor);return t>=s&&t<=addDays(s,6)?t:s;}
+  if(L.view==="week"){var s=shownWeek(L.cursor);return t>=s&&t<=addDays(s,6)?t:s;}
   return t;
 }
 function onMainClick(e){
@@ -999,8 +1232,8 @@ function onMainClick(e){
   if((b=t.closest("[data-lgoto]"))){if(L.view==="week")setView("day",b.dataset.lgoto);return;}
   if((b=t.closest("[data-lad]"))){newTask({date:b.dataset.lad});return;}
   if((b=t.closest("[data-lslot]"))){
-    var r=b.getBoundingClientRect(),m=Math.floor((e.clientY-r.top)/HH*2)*30;
-    newTask({date:b.dataset.lslot,time:hhmm(K.clamp(m,0,23*60+30))}); return;}
+    var r=b.getBoundingClientRect(),m=Math.floor((e.clientY-r.top)/HH*2)*30,tm=hhmm(K.clamp(m,0,23*60+30));
+    newTask({date:b.dataset.lslot,time:tm,end:endFor(tm)}); return;}
   /* месяц: первое касание выбирает день, второе — добавляет задачу на него */
   if((b=t.closest("[data-lsel]"))){
     var d=b.dataset.lsel;
@@ -1015,17 +1248,43 @@ function onSideClick(e){
     var id=b.dataset.lhide,h=hiddenKinds().slice(),i=h.indexOf(id);
     if(i<0)h.push(id);else h.splice(i,1);
     setMeta("hidden",h); render(); K.renderSide(); return;}
-  if((b=t.closest("[data-lkedit]"))){editKind(b,K.find(ownKinds(),b.dataset.lkedit));return;}
+  if((b=t.closest("[data-lkedit]"))){editKind(b,kindOf(b.dataset.lkedit));return;}
   if((b=t.closest("[data-lknew]"))) editKind(b,null);
 }
 function onSettingsClick(e){
   if(!isLife()) return;
-  var t=e.target;
+  var t=e.target,b;
   if(t.closest("[data-lexport]")) exportBackup();
   else if(t.closest("[data-limport]")) importBackup();
   else if(t.closest("[data-lpersist]")){persistAsked=false;askPersist();}
+  else if((b=t.closest("[data-lkedit]"))) editKind(b,kindOf(b.dataset.lkedit));
+  else if((b=t.closest("[data-lknew]"))) editKind(b,null);
+  else if((b=t.closest("[data-lpin]"))){
+    if(b.dataset.lpin==="set") setPin();
+    else if(confirm("Выключить PIN? Grid Life будет открываться без него.")){setMeta("pin",null);K.renderSettings();}
+  }
+  else if(t.closest("[data-lcleango]")) cleanDone(+$("[data-lclean]",e.currentTarget).value);
+  else if(t.closest("[data-lwipe]")) askWipe();
   else if(t.closest("[data-linstall]")&&installEvt){
     installEvt.prompt(); installEvt.userChoice.then(function(){installEvt=null;K.renderSettings();});
+  }
+}
+function onSettingsChange(e){
+  if(!isLife()) return;
+  var t=e.target,k=t.dataset.lpref;
+  if(k){
+    setPref(k,t.type==="checkbox"?t.checked:/^(weekStart|duration)$/.test(k)?Number(t.value):t.value);
+    if(k==="view"&&t.value!=="last") setView(t.value);
+    if(k==="overdue") autoMove();
+    render(); K.renderSide(); return;
+  }
+  if(t.matches("[data-lkon]")){
+    var off=offKinds().filter(function(id){return id!==t.dataset.lkon;});
+    if(!t.checked) off.push(t.dataset.lkon);
+    setMeta("offKinds",off); render(); K.renderSide(); return;
+  }
+  if(t.matches("[data-lopenlife]")){
+    try{if(t.checked) localStorage.setItem("grid.openLife","1"); else localStorage.removeItem("grid.openLife");}catch(err){}
   }
 }
 var railToday=document.createElement("button");
@@ -1035,22 +1294,28 @@ $(".rail").appendChild(railToday);
 railToday.addEventListener("click",function(e){onMainClick(e);});
 $("#side").addEventListener("click",onSideClick);
 $("#settings").addEventListener("click",onSettingsClick);
+$("#settings").addEventListener("change",onSettingsChange);
 K.scrim.addEventListener("click",function(){if(isLife())closePanel();});
 /* после сна устройства «сегодня» могло смениться */
-document.addEventListener("visibilitychange",function(){if(!document.hidden&&isLife()&&!panelOpen())render();});
+document.addEventListener("visibilitychange",function(){if(!document.hidden&&isLife()&&!panelOpen()){autoMove();render();}});
 
+/* PIN спрашиваем при каждом входе в Grid Life: close() запирает, show() показывает экран PIN */
 window.GridLife={
   show:function(el){
     if(!L.el){
       L.el=el; el.addEventListener("click",onMainClick);
-      L.loading=load().then(function(){render();checkPersist();K.renderSide();},function(e){
+      L.loading=load().then(function(){
+        if(lp().view!=="last") L.view=lp().view;
+        if(L.meta.pin&&!L.unlocked) showLock();
+        render(); checkPersist(); K.renderSide(); autoMove();
+      },function(e){
         el.innerHTML='<div class="empty"><h2>Календарь не открылся</h2><p>Браузер не дал хранить данные на устройстве'+
           (e&&e.message?": "+esc(e.message):"")+". Проверьте, не включён ли режим инкогнито с запретом хранения.</p></div>";
       });
-    }
+    }else if(L.ready&&L.meta.pin&&!L.unlocked) showLock();
     render();
   },
-  close:function(){closePanel(true);},
+  close:function(){closePanel(true);L.unlocked=false;hideLock();},
   escape:function(){return closePanel();},
   sideHTML:sideHTML,
   settingsHTML:settingsHTML

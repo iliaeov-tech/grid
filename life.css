@@ -202,6 +202,29 @@
 .ldialog .btn{min-height:46px;border:1px solid var(--line-2);text-align:left;padding:10px 14px;font-size:14px}
 .ldialog .btn:hover{border-color:var(--accent);color:var(--accent)}
 .ldialog .btn.cancel{border-color:transparent;color:var(--ink-3);text-align:center}
+.ldialog .btn.danger{color:var(--danger)}
+.ldialog .btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+.ldialog p{margin:0 0 6px;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+/* четыре цифры PIN */
+.lpin{width:100%;padding:10px 12px 10px calc(12px + .5em);border-radius:var(--r-m);border:1px solid var(--line-2);
+  background:var(--surface);font-family:var(--f-mono);font-size:26px;letter-spacing:.5em;text-align:center}
+.lpin:focus{outline:none;border-color:var(--accent)}
+/* экран PIN закрывает весь Grid Life */
+.llock{position:fixed;inset:0;z-index:65;background:var(--ground);display:grid;place-items:center;
+  padding:24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left))}
+.llock-box{width:min(300px,100%);display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.llock-box>svg{width:34px;height:34px;fill:none;stroke:var(--accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.llock-box h2{margin:0;font-size:19px;font-weight:600}
+.llock-box p{margin:0;color:var(--ink-2)}
+.llock-box .llock-msg{min-height:20px;font-size:13px;color:var(--danger)}
+.llock-box .btn{width:100%;padding:10px;border:1px solid var(--line-2)}
+/* настройки Grid Life: переключатель стандартного типа и очистка */
+.set .mrow .sp{flex:1}
+.switch.mini{padding:0;flex:none}
+.mini-gap{width:34px;flex:none}
+.lclean{display:flex;flex-direction:column;gap:6px}
+.lclean>span{color:var(--ink-2)}
+.lclean select.in{width:auto;min-width:150px}
 @media (max-width:640px){
   .ldialog{place-items:end stretch;padding:0}
   .ldialog-box{width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}

@@ -1153,7 +1153,16 @@ function hideLock(){
   lockEl.remove(); lockEl=null;
   inerted.forEach(function(el){el.inert=false;}); inerted=[];
 }
-function unlock(){L.unlocked=true;lockFails=0;hideLock();render();}
+function unlock(){L.unlocked=true;lockFails=0;hideLock();render();openPending();}
+/* задача из напоминания открывается, когда данные загружены и PIN введён */
+function openPending(){
+  var k=L.openKey;
+  if(!k||!L.ready||L.meta.pin&&!L.unlocked) return;
+  L.openKey=null;
+  var it=findItem(k); if(!it) return;
+  L.cursor=L.selected=it.date||today(); render();
+  openTask(k);
+}
 /* Face ID не сработал, но PIN пустил: доступ не держим, а предлагаем настроить заново */
 function pinUnlocked(){
   var trouble=bioTrouble; bioTrouble=null; unlock();
@@ -1424,7 +1433,7 @@ window.GridLife={
       L.loading=load().then(function(){
         if(lp().view!=="last") L.view=lp().view;
         if(L.meta.pin&&!L.unlocked) showLock();
-        render(); checkPersist(); K.renderSide(); autoMove();
+        render(); checkPersist(); K.renderSide(); autoMove(); openPending();
       },function(e){
         el.innerHTML='<div class="empty"><h2>Календарь не открылся</h2><p>Браузер не дал хранить данные на устройстве'+
           (e&&e.message?": "+esc(e.message):"")+". Проверьте, не включён ли режим инкогнито с запретом хранения.</p></div>";
@@ -1433,6 +1442,7 @@ window.GridLife={
     render();
   },
   close:function(){closePanel(true);L.unlocked=false;hideLock();},
+  openKey:function(key){L.openKey=key;openPending();},
   escape:function(){return closePanel();},
   sideHTML:sideHTML,
   settingsHTML:settingsHTML

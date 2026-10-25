@@ -18,9 +18,9 @@
 <script>
 /* режим ставим до отрисовки, чтобы не мелькал акцент другого режима:
    последний открытый или Grid Life, если так выбрано в его настройках;
-   ссылка на задачу (#task=…) всегда ведёт в рабочий режим */
+   ссылка на задачу (#task=…) всегда ведёт в рабочий режим, напоминание Grid Life (#life…) — в личный */
 (function(){var m="work";
-  try{m=(localStorage.getItem("grid.mode")==="life"||localStorage.getItem("grid.openLife")==="1")&&
+  try{m=/^#life/.test(location.hash)||(localStorage.getItem("grid.mode")==="life"||localStorage.getItem("grid.openLife")==="1")&&
     !/^#task=/.test(location.hash)?"life":"work";}catch(e){}
   document.documentElement.dataset.mode=m;})();
 </script>
@@ -754,6 +754,11 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .invite input.in{flex:1 1 180px;width:auto;min-width:0}
 .invite select.in{flex:none;width:auto}
 .set .arow{box-shadow:none;border:1px solid var(--line);padding:7px 9px}
+/* тихие часы: «с – до»; у поля времени в Safari свои отступы и выравнивание по центру */
+.quiet{display:flex;align-items:center;gap:8px;padding-left:44px}
+.quiet .in{width:112px;flex:none;-webkit-appearance:none;appearance:none;min-width:0;text-align:left}
+.quiet .in::-webkit-date-and-time-value{text-align:left}
+.quiet span{color:var(--ink-3)}
 /* настройки Work: группа «лично для вас» и группа проекта */
 .wset>.set+.set{margin-top:22px}
 .wset>.set-group{margin-top:34px;padding-top:18px;border-top:1px solid var(--line)}
@@ -1154,7 +1159,9 @@ function nameOf(p){return p?p.name||String(p.email||"").split("@")[0]||"Учас
 function me(){return person(S.me);}
 /* личные настройки отображения лежат в профиле (profiles.settings) —
    они одинаковы на всех устройствах человека */
-var PREFS={view:"board",hideDone:false,density:"normal",weekStart:1,dateFmt:"short"};
+/* push: какие события присылать, тихие часы и пояс (по нему сервер считает 9:00 и тихие часы) */
+var PREFS={view:"board",hideDone:false,density:"normal",weekStart:1,dateFmt:"short",
+  pushDue:true,pushAssigned:true,pushComment:true,quiet:true,quietFrom:"22:00",quietTo:"08:00",tz:""};
 function prefs(){var s=(me()||{}).settings;return Object.assign({},PREFS,s&&typeof s==="object"?s:{});}
 /* вид и «скрывать выполненные» действуют с открытия Grid Work */
 function applyPrefs(){
@@ -3198,8 +3205,16 @@ function saveBlob(blob,name){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
 }
-/* ссылка grid.html#task=ID (из события в календаре) открывает задачу */
+/* ссылка grid.html#task=ID (из события в календаре или уведомления) открывает
+   задачу; #life=ключ — задачу Grid Life из напоминания */
 function openFromHash(){
+  var l=/^#life(?:=(.+))?$/.exec(location.hash);
+  if(l){
+    history.replaceState(null,"",location.pathname+location.search);
+    if(isWork()) setMode("life");
+    if(l[1]) GridLife.openKey(decodeURIComponent(l[1]));
+    return;
+  }
   var m=/^#task=(.+)$/.exec(location.hash); if(!m) return;
   if(!isWork()) setMode("work");          /* задача из доски открывается только в рабочем режиме */
   var c=card(decodeURIComponent(m[1])); if(!c||!onBoard(c)) return;
@@ -3600,11 +3615,146 @@ function calendarsHTML(){
     "<p>Задачи с датами появятся в вашем Google Календаре или Outlook — на весь день, с даты начала по дедлайн. "+
     "Календарь сам забирает изменения раз в несколько часов, ускорить это нельзя. Правки в календаре в доску не возвращаются.</p>"+block);
 }
+/* ═════════ push-уведомления ═════════ */
+/* Подписка браузера одна на устройство — общая для Grid Work и Grid Life.
+   Открытый ключ VAPID отдаёт функция grid-push: если она не отвечает,
+   уведомления владелец ещё не настроил. На iPhone push есть только у Grid,
+   добавленного на экран «Домой» (iOS 16.4 и новее). */
+function pushURL(){return CFG?CFG.url.replace(/\/+$/,"")+"/functions/v1/grid-push":"";}
+function standalone(){return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;}
+function iosDevice(){var u=navigator.userAgent;return /iPhone|iPad|iPod/.test(u)||/Macintosh/.test(u)&&navigator.maxTouchPoints>1;}
+/* "ok" — можно включить; "home" — iPhone в Safari, сначала на экран «Домой»;
+   "denied" — запрещено в настройках браузера; "no" — браузер не умеет */
+function pushSupport(){
+  if(iosDevice()&&!standalone()) return "home";
+  if(!("serviceWorker" in navigator)||!("PushManager" in window)||!("Notification" in window)) return "no";
+  return Notification.permission==="denied"?"denied":"ok";
+}
+var pushKeyP=null;
+function pushKey(){
+  if(!pushKeyP) pushKeyP=fetch(pushURL()).then(function(r){return r.ok?r.json():{};}).then(function(d){
+    if(!d.key) throw new Error("Уведомления ещё не настроены");
+    return d.key;
+  }).catch(function(e){pushKeyP=null;throw e;});
+  return pushKeyP;
+}
+function b64uBytes(s){
+  s=s.replace(/-/g,"+").replace(/_/g,"/");
+  var r=atob(s+"===".slice((s.length+3)%4)),a=new Uint8Array(r.length);
+  for(var i=0;i<r.length;i++) a[i]=r.charCodeAt(i);
+  return a;
+}
+/* разрешение спрашиваем первым делом и прямо в нажатии — иначе Safari не покажет вопрос */
+function askNotify(){
+  var p=Notification.permission==="granted"?Promise.resolve("granted"):Notification.requestPermission();
+  return p.then(function(r){if(r!=="granted") throw new Error("denied");});
+}
+/* подписка этого устройства; create — завести, если её нет (разрешение уже дано) */
+function pushSubscription(create){
+  return navigator.serviceWorker.ready.then(function(reg){
+    return reg.pushManager.getSubscription().then(function(sub){
+      if(sub||!create) return sub;
+      return pushKey().then(function(key){
+        return reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uBytes(key)});});
+    });
+  });
+}
+function pushError(e){
+  return e&&e.message==="denied"?"Уведомления запрещены — разрешите их для Grid в настройках браузера или телефона"
+    :"Не удалось включить уведомления"+(e&&e.message?": "+e.message:"");
+}
+/* устройство в рассылке Grid Work; отметка — чей вход, чтобы после выхода
+   или входа другим аккаунтом не приходили чужие уведомления */
+var PUSH_FLAG="grid.push.work";
+function workPushOn(){try{return !!S.me&&localStorage.getItem(PUSH_FLAG)===S.me;}catch(e){return false;}}
+function setWorkPushFlag(on){try{if(on) localStorage.setItem(PUSH_FLAG,S.me); else localStorage.removeItem(PUSH_FLAG);}catch(e){}}
+function subscribeWork(sub){
+  var j=sub.toJSON();
+  return S.sb.rpc("grid_push_subscribe",{p_endpoint:j.endpoint,p_key:j.keys.p256dh,p_auth:j.keys.auth})
+    .then(function(r){if(r.error) throw r.error;});
+}
+/* 9:00 и тихие часы сервер считает по поясу этого телефона */
+function saveTZ(){
+  var tz=Intl.DateTimeFormat().resolvedOptions().timeZone||"",s=prefs();
+  if(!tz||s.tz===tz||!me()) return;
+  s.tz=tz; patchProfile({settings:s});
+}
+function enableWorkPush(){
+  askNotify().then(function(){return pushSubscription(true);}).then(subscribeWork).then(function(){
+    setWorkPushFlag(true); saveTZ(); renderSettings(true);
+    flash("Уведомления включены");
+  }).catch(function(e){renderSettings(true);flash(pushError(e));});
+}
+function unsubscribeWork(){
+  return pushSubscription(false).then(function(sub){
+    if(!sub) return;
+    return S.sb.rpc("grid_push_unsubscribe",{p_endpoint:sub.endpoint}).then(function(r){if(r.error) throw r.error;});
+  });
+}
+function disableWorkPush(){
+  unsubscribeWork().then(function(){setWorkPushFlag(false);flash("Уведомления на этом устройстве выключены");},
+    function(e){flash("Не удалось выключить уведомления: "+(e&&e.message||"нет связи")+". Попробуйте ещё раз.");})
+    .then(function(){renderSettings(true);});
+}
+/* при входе: подписка могла смениться — обновляем её в базе вместе с поясом.
+   Без связи не беда: попробуем при следующем открытии */
+function refreshWorkPush(){
+  if(!workPushOn()||pushSupport()!=="ok"||Notification.permission!=="granted") return;
+  pushSubscription(true).then(subscribeWork).then(saveTZ).catch(function(){});
+}
+/* при выходе устройство уходит из рассылки этого аккаунта; без связи всё
+   равно выходим — устройство перейдёт к тому, кто войдёт на нём следующим */
+function signOut(){
+  if(!S.sb) return;
+  (workPushOn()?unsubscribeWork().catch(function(){}):Promise.resolve()).then(function(){
+    setWorkPushFlag(false); S.sb.auth.signOut();});
+}
+function sendTestPush(){
+  S.sb.functions.invoke("grid-push",{body:{test:true}}).then(function(r){
+    flash(r.data&&r.data.sent?"Пробное уведомление отправлено":"Не удалось отправить пробное уведомление"+
+      (r.error&&r.error.message?": "+r.error.message:""));
+  });
+}
+function notifyHTML(){
+  var p=prefs(),sup=pushSupport(),on=workPushOn()&&sup==="ok"&&Notification.permission==="granted",device;
+  if(S.store.kind!=="supabase")
+    device='<div class="drop-hint">Уведомления заработают после подключения базы Supabase и функции grid-push — шаги в README.</div>';
+  else if(S.pushKey==="off")
+    device='<div class="drop-hint">Уведомления ещё не настроены: владельцу Grid нужно развернуть функцию grid-push — шаги в README.</div>';
+  else if(sup==="home")
+    device='<div class="drop-hint">На iPhone уведомления приходят, только если Grid добавлен на экран «Домой»: Safari → «Поделиться» → '+
+      "«На экран „Домой“». Потом откройте Grid с иконки и включите уведомления здесь.</div>";
+  else if(sup==="no") device='<div class="drop-hint">Этот браузер не умеет показывать уведомления.</div>';
+  else device='<label class="switch"><input type="checkbox" data-pushon="1"'+(on?" checked":"")+(sup==="denied"?" disabled":"")+">"+
+      "<span><b>Уведомления на этом устройстве</b><small>"+(sup==="denied"
+        ?"Запрещены в настройках браузера или телефона — разрешите их для Grid, затем включите здесь."
+        :"Приходят, даже когда Grid закрыт.")+"</small></span></label>"+
+    (on?'<div class="row"><button class="btn ghost" data-pushtest="1">Прислать пробное</button></div>':"");
+  function sw(key,title,note){
+    return '<label class="switch"><input type="checkbox" data-pref="'+key+'"'+(p[key]?" checked":"")+"><span><b>"+title+"</b>"+
+      (note?"<small>"+note+"</small>":"")+"</span></label>";
+  }
+  return setSection("notify","Уведомления",
+    "<p>О задачах, где вы ответственный, а если ответственного нет — где вы автор.</p>"+device+
+    sw("pushDue","Дедлайны","За день и в день дедлайна, в 9:00 по времени телефона.")+
+    sw("pushAssigned","Вас назначили ответственным")+
+    sw("pushComment","Комментарий к вашей задаче")+
+    sw("quiet","Тихие часы","Уведомления за это время придут, когда тихие часы закончатся.")+
+    (p.quiet?'<div class="quiet"><input class="in" type="time" data-pref="quietFrom" value="'+esc(p.quietFrom)+'" aria-label="Тихие часы с">'+
+      '<span>–</span><input class="in" type="time" data-pref="quietTo" value="'+esc(p.quietTo)+'" aria-label="Тихие часы до"></div>':""));
+}
+/* ключ VAPID спрашиваем при открытии настроек: так видно, настроены ли уведомления */
+function checkPush(){
+  if(!CFG||S.pushKey==="ok"||S.pushKey==="loading") return;
+  S.pushKey="loading";
+  pushKey().then(function(){S.pushKey="ok";},function(){S.pushKey="off";}).then(function(){renderSettings();});
+}
+
 /* сверху — личное, ниже — проект (меняет владелец, действует для всех), данные и о программе */
 function settingsHTML(){
   var p=project()&&!project().deletedAt?project():null;
   return drawerHead("Настройки")+'<div class="d-body wset">'+
-    groupHead("Лично для вас","Видите и меняете только вы.")+profileHTML()+displayHTML()+calendarsHTML()+
+    groupHead("Лично для вас","Видите и меняете только вы.")+profileHTML()+displayHTML()+notifyHTML()+calendarsHTML()+
     (p?groupHead("Проект «"+p.name+"»",isOwner()?"Вы владелец: изменения действуют для всей команды."
         :"Меняет владелец проекта, действует для всей команды.")+projectHTML()+teamHTML()+typesHTML():"")+
     groupHead("Данные","Копия, место для файлов и корзина.")+backupHTML()+storageHTML()+trashHTML()+
@@ -3630,7 +3780,7 @@ function openSettings(section){
   var s=typeof section==="string"&&$('[data-set="'+section+'"]',settingsEl);
   if(s) s.scrollIntoView({block:"start"});
   var b=$("[data-dclose]",settingsEl); if(b) b.focus({preventScroll:true});
-  if(isWork()) fetchStorage();
+  if(isWork()){fetchStorage();checkPush();}
 }
 function closeSettings(){
   if(!settingsOpen()) return;
@@ -3667,7 +3817,8 @@ settingsEl.addEventListener("click",function(e){
   if((b=t.closest("[data-pcolor]"))){patchProfile({color:b.dataset.pcolor});return;}
   if(t.closest("[data-pphoto]")){pickPhoto();return;}
   if(t.closest("[data-pphotodel]")){patchProfile({avatar:""});return;}
-  if(t.closest("[data-signout]")){if(S.sb)S.sb.auth.signOut();return;}
+  if(t.closest("[data-signout]")){signOut();return;}
+  if(t.closest("[data-pushtest]")){sendTestPush();return;}
   if(t.closest("[data-invite]")){sendInvite();return;}
   if((b=t.closest("[data-mdel]"))){removeMember(b.dataset.mdel);renderSettings(true);return;}
   if(t.closest("[data-copylink]")){copyText(location.origin+location.pathname,"Ссылка на Grid скопирована");return;}
@@ -3706,13 +3857,17 @@ settingsEl.addEventListener("change",function(e){
   if(t.matches("[data-pname]")){
     v=t.value.trim(); if(!v){t.value=(me()||{}).name||"";return;}
     patchProfile({name:v}); return;}
+  /* включение — прямо в нажатии: так Safari спросит разрешение */
+  if(t.matches("[data-pushon]")){if(t.checked) enableWorkPush(); else disableWorkPush();return;}
   if(t.matches("[data-pref]")){
     var k=t.dataset.pref,s=prefs();
-    v=t.type==="checkbox"?t.checked:k==="weekStart"?Number(t.value):t.value;
+    v=t.type==="checkbox"?t.checked:k==="weekStart"?Number(t.value):t.type==="time"?t.value||PREFS[k]:t.value;
     s[k]=v;
     if(k==="view") S.tab=v;
     if(k==="hideDone"){S.filter.hideDone=v;$("#fDone").setAttribute("aria-pressed",String(v));}
-    patchProfile({settings:s}); return;}
+    patchProfile({settings:s});
+    if(k==="quiet") renderSettings(true);
+    return;}
   if(t.matches("[data-projname]")){
     v=t.value.trim(); if(!v){t.value=projName();return;}
     patchProject(S.project,{name:v}); renderAll(); return;}
@@ -4058,7 +4213,7 @@ function attach(store){
   COLLS.forEach(function(coll){
     store.subscribe(coll,function(rows){
       S[coll]=rows;
-      if(coll==="profiles"&&!S.prefsOn&&me()){S.prefsOn=true;applyPrefs();}
+      if(coll==="profiles"&&!S.prefsOn&&me()){S.prefsOn=true;applyPrefs();if(store.kind==="supabase")refreshWorkPush();}
       renderMain();
       if(S.open||S.openNote) renderDrawer();
       renderSide(); renderSettings();
@@ -4230,9 +4385,15 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
 /* работа без сети и установка на главный экран (только на http/https) */
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
   window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});
+  /* нажатие на уведомление, когда Grid уже открыт: sw.js присылает ссылку на задачу */
+  navigator.serviceWorker.addEventListener("message",function(e){
+    var u=e.data&&e.data.open,h=u?new URL(u).hash:"";
+    if(!h) return;
+    if(h!==location.hash) location.hash=h; else openFromHash();
+  });
 }
 /* life.js подключается следующим скриптом, поэтому стартуем, когда он загружен */
-document.addEventListener("DOMContentLoaded",function(){setMode(root.dataset.mode);});
+document.addEventListener("DOMContentLoaded",function(){setMode(root.dataset.mode);openFromHash();});
 })();
 </script>
 <script src="life.js"></script>

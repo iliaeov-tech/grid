@@ -290,6 +290,213 @@ language sql stable security definer set search_path = public as $$
   select coalesce(sum(size), 0)::bigint from public.files
 $$;
 
+-- ── Push-уведомления Grid Work ─────────────────────────────
+-- Устройства (подписки браузера) и очередь уведомлений. Очередь пополняют
+-- триггеры (назначили ответственным, комментарий к задаче) и раз в минуту
+-- функция grid-push: дедлайны — за день и в день дедлайна в 9:00 по времени
+-- человека. Она же рассылает накопленное, кроме тех, у кого сейчас тихие часы.
+-- Уведомления о задаче получает ответственный, а если его нет — автор.
+-- Клиенты к этим таблицам доступа не имеют: только функции ниже и grid-push.
+create table if not exists public.push_subscriptions (
+  endpoint   text primary key,              -- адрес подписки браузера: одно устройство — одна строка
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+
+create table if not exists public.notifications (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  card_id    text references public.cards(id) on delete cascade,
+  kind       text not null check (kind in ('due_tomorrow','due_today','assigned','comment')),
+  title      text not null,
+  body       text not null default '',
+  for_date   date,                          -- дедлайн, о котором напоминание: одно на каждый
+  created_at timestamptz not null default now(),
+  sent_at    timestamptz
+);
+create unique index if not exists notifications_due_once on public.notifications (user_id, card_id, kind, for_date);
+create index if not exists notifications_pending_idx on public.notifications (created_at) where sent_at is null;
+
+-- устройство получает уведомления того, кто сейчас вошёл в Grid на нём
+create or replace function public.grid_push_subscribe(p_endpoint text, p_key text, p_auth text) returns void
+language sql security definer set search_path = public as $$
+  insert into public.push_subscriptions (endpoint, user_id, p256dh, auth)
+  select p_endpoint, auth.uid(), p_key, p_auth where auth.uid() is not null
+  on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth
+$$;
+create or replace function public.grid_push_unsubscribe(p_endpoint text) returns void
+language sql security definer set search_path = public as $$
+  delete from public.push_subscriptions where endpoint = p_endpoint and user_id = auth.uid()
+$$;
+
+-- время на часах человека: пояс берём из его настроек (ставит приложение)
+create or replace function public.grid_local_now(tz text) returns timestamp
+language plpgsql stable as $$
+begin
+  return now() at time zone coalesce(nullif(tz, ''), 'UTC');
+exception when others then
+  return now() at time zone 'UTC';
+end $$;
+-- тихие часы из личных настроек; по умолчанию с 22:00 до 8:00
+create or replace function public.grid_quiet(s jsonb) returns boolean
+language plpgsql stable as $$
+declare t time; a time; b time;
+begin
+  if coalesce((s->>'quiet')::boolean, true) = false then return false; end if;
+  t := public.grid_local_now(s->>'tz')::time;
+  a := coalesce(nullif(s->>'quietFrom', ''), '22:00')::time;
+  b := coalesce(nullif(s->>'quietTo', ''), '08:00')::time;
+  return case when a = b then false when a < b then t >= a and t < b else t >= a or t < b end;
+exception when others then
+  return false;
+end $$;
+-- какие уведомления человек хочет получать (все включены, пока не выключит)
+create or replace function public.grid_push_wanted(s jsonb, k text) returns boolean
+language sql immutable as $$
+  select coalesce((s->>case when k like 'due%' then 'pushDue' when k = 'assigned' then 'pushAssigned' else 'pushComment' end)::boolean, true)
+$$;
+
+create or replace function public.grid_notify_assigned() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.assignee is not null and new.assignee is distinct from old.assignee and new.assignee is distinct from auth.uid()
+     and not new.done and not new.archived and new.deleted_at is null
+     and exists (select 1 from public.push_subscriptions where user_id = new.assignee) then
+    insert into public.notifications (user_id, card_id, kind, title, body)
+    values (new.assignee, new.id, 'assigned', new.title,
+            'Вас назначили ответственным' || coalesce(' · ' || nullif((select name from public.profiles where id = auth.uid()), ''), ''));
+  end if;
+  return new;
+end $$;
+drop trigger if exists grid_notify_assigned on public.cards;
+create trigger grid_notify_assigned after update of assignee on public.cards
+  for each row execute function public.grid_notify_assigned();
+
+-- комментарий без автора — это восстановление из копии: о нём не сообщаем
+create or replace function public.grid_notify_comment() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare c public.cards; who uuid;
+begin
+  select * into c from public.cards where id = new.card_id;
+  who := coalesce(c.assignee, c.created_by);
+  if who is not null and new.author_id is not null and who <> new.author_id and c.deleted_at is null
+     and exists (select 1 from public.project_members where project_id = c.project_id and user_id = who)
+     and exists (select 1 from public.push_subscriptions where user_id = who) then
+    insert into public.notifications (user_id, card_id, kind, title, body)
+    values (who, c.id, 'comment', c.title, left(coalesce(nullif(new.author, ''), 'Коллега') || ': ' || new.body, 200));
+  end if;
+  return new;
+end $$;
+drop trigger if exists grid_notify_comment on public.comments;
+create trigger grid_notify_comment after insert on public.comments
+  for each row execute function public.grid_notify_comment();
+
+-- Раз в минуту (из grid-push): добавить напоминания о дедлайнах и забрать то,
+-- что пора отправить. Отправленное помечается сразу, поэтому два вызова
+-- подряд одно уведомление не повторят. Выключенные человеком уведомления,
+-- выполненные и удалённые задачи пропускаются; старше суток — не досылаем.
+create or replace function public.grid_push_take()
+returns table (endpoint text, p256dh text, auth text, title text, body text, card_id text, kind text)
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.notifications (user_id, card_id, kind, title, body, for_date)
+  select r.uid, c.id, k.kind, c.title,
+         case k.kind when 'due_tomorrow' then 'Дедлайн завтра' else 'Дедлайн сегодня' end || ' · ' || pr.name, c.due
+  from public.cards c
+  join public.projects pr on pr.id = c.project_id and pr.deleted_at is null
+  join public.columns col on col.id = c.column_id and col.deleted_at is null
+  cross join lateral (select coalesce(c.assignee, c.created_by) as uid) r
+  join public.profiles p on p.id = r.uid
+  cross join lateral (select public.grid_local_now(p.settings->>'tz') as lt) t
+  cross join lateral (values ('due_tomorrow', c.due - 1), ('due_today', c.due)) k(kind, day)
+  where c.due between current_date - 1 and current_date + 2
+    and not c.done and not c.archived and c.deleted_at is null
+    and t.lt::date = k.day and t.lt::time >= time '09:00' and t.lt::time < time '10:00'
+    and exists (select 1 from public.project_members m where m.project_id = c.project_id and m.user_id = r.uid)
+    and exists (select 1 from public.push_subscriptions s where s.user_id = r.uid)
+  on conflict do nothing;
+
+  delete from public.notifications n where n.created_at < now() - interval '30 days';
+  update public.notifications n set sent_at = now() where n.sent_at is null and n.created_at < now() - interval '1 day';
+
+  return query
+  with due as (
+    select n.id from public.notifications n join public.profiles p on p.id = n.user_id
+    where n.sent_at is null and not public.grid_quiet(p.settings)
+    for update of n skip locked
+  ), taken as (
+    update public.notifications n set sent_at = now() from due where n.id = due.id returning n.*
+  )
+  select s.endpoint, s.p256dh, s.auth, x.title, x.body, x.card_id, x.kind
+  from taken x
+  join public.profiles p on p.id = x.user_id
+  join public.cards c on c.id = x.card_id
+  join public.push_subscriptions s on s.user_id = x.user_id
+  where public.grid_push_wanted(p.settings, x.kind) and c.deleted_at is null
+    and (x.kind not like 'due%' or not c.done and not c.archived);
+end $$;
+
+-- ── Напоминания Grid Life ──────────────────────────────────
+-- Задачи Grid Life живут только на устройстве. Чтобы напомнить, когда
+-- приложение закрыто, устройство присылает сюда время напоминаний и
+-- случайные номера — без названий и текста задач; название телефон
+-- подставляет сам. Аккаунт не нужен: устройство узнаётся по случайному
+-- ключу, а здесь хранится только его отпечаток (SHA-256). Пишет и читает
+-- эти таблицы только функция grid-push.
+create table if not exists public.life_devices (
+  id         uuid primary key default gen_random_uuid(),
+  token_hash text not null unique,
+  endpoint   text not null,
+  p256dh     text not null,
+  auth       text not null,
+  seen_at    timestamptz not null default now()
+);
+create table if not exists public.life_reminders (
+  device_id uuid not null references public.life_devices(id) on delete cascade,
+  rid       text not null,                  -- случайный номер: что за задача, знает только устройство
+  fire_at   timestamptz not null,
+  primary key (device_id, rid)
+);
+create index if not exists life_reminders_fire_idx on public.life_reminders (fire_at);
+
+-- устройство заменяет весь свой список напоминаний (не больше 300, на год вперёд)
+create or replace function public.grid_life_save(p_hash text, p_endpoint text, p_key text, p_auth text, p_items jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare dev uuid;
+begin
+  insert into public.life_devices (token_hash, endpoint, p256dh, auth) values (p_hash, p_endpoint, p_key, p_auth)
+  on conflict (token_hash) do update set endpoint = excluded.endpoint, p256dh = excluded.p256dh,
+    auth = excluded.auth, seen_at = now()
+  returning id into dev;
+  delete from public.life_reminders where device_id = dev;
+  insert into public.life_reminders (device_id, rid, fire_at)
+  select dev, x->>'rid', (x->>'at')::timestamptz
+  from (select x from jsonb_array_elements(coalesce(p_items, '[]')) x limit 300) i
+  where (x->>'at')::timestamptz between now() - interval '1 hour' and now() + interval '400 days'
+  on conflict do nothing;
+end $$;
+-- наступившие напоминания; опоздавшие больше чем на час не шлём.
+-- Устройство, которое не заходило 90 дней, забываем.
+create or replace function public.grid_life_take()
+returns table (rid text, endpoint text, p256dh text, auth text)
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.life_devices d where d.seen_at < now() - interval '90 days';
+  return query
+  with due as (delete from public.life_reminders r where r.fire_at <= now() returning r.*)
+  select x.rid, d.endpoint, d.p256dh, d.auth
+  from due x join public.life_devices d on d.id = x.device_id
+  where x.fire_at > now() - interval '1 hour';
+end $$;
+
+-- рассылкой и чужими устройствами распоряжается только grid-push (ключ сервиса)
+revoke execute on function public.grid_push_take() from public, anon, authenticated;
+revoke execute on function public.grid_life_take() from public, anon, authenticated;
+revoke execute on function public.grid_life_save(text, text, text, text, jsonb) from public, anon, authenticated;
+
 -- ── Правила доступа ────────────────────────────────────────
 -- Страница лежит на GitHub Pages и открыта всем вместе с anon-ключом,
 -- поэтому данные закрыты здесь: без входа не видно ни строки, а после
@@ -298,7 +505,8 @@ do $$
 declare t text; p record;
 begin
   foreach t in array array['profiles','projects','project_members','statuses','kinds',
-                           'columns','cards','comments','files','notes','feeds'] loop
+                           'columns','cards','comments','files','notes','feeds',
+                           'push_subscriptions','notifications','life_devices','life_reminders'] loop
     execute format('alter table public.%I enable row level security', t);
     for p in select policyname from pg_policies where schemaname = 'public' and tablename = t loop
       execute format('drop policy %I on public.%I', p.policyname, t);

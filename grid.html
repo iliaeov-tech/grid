@@ -52,15 +52,19 @@
   --danger:#C93A50;   --danger-soft:#FBE2E6;
   --warn:#B4831F;
 
-  --h-green:#DEF3E4;  --h-green-ink:#2C6B41;
-  --h-yellow:#FBF1D2; --h-yellow-ink:#7C5C13;
-  --h-red:#FBE1E1;    --h-red-ink:#8F3036;
-  --h-purple:#EBE5FA; --h-purple-ink:#583D8F;
-  --h-blue:#DFEAFB;   --h-blue-ink:#2C5480;
-  --h-orange:#FCE7D6; --h-orange-ink:#8B4B21;
-  --h-teal:#D7F0EC;   --h-teal-ink:#206C61;
-  --h-pink:#FBE1EE;   --h-pink-ink:#8D3265;
-  --h-gray:#ECEEF3;   --h-gray-ink:#4A5168;
+  /* общая палитра типов, статусов, заметок и карточек: --k-* яркий (иконка,
+     точка), --h-* светлый оттенок (фон), --h-*-ink тёмный текст (контраст на
+     светлом фоне не ниже 4.5:1) */
+  --k-blue:#3B82F6;   --h-blue:#DBEAFE;   --h-blue-ink:#1E40AF;
+  --k-sky:#0EA5E9;    --h-sky:#E0F2FE;    --h-sky-ink:#075985;
+  --k-teal:#14B8A6;   --h-teal:#CCFBF1;   --h-teal-ink:#115E59;
+  --k-green:#22C55E;  --h-green:#DCFCE7;  --h-green-ink:#166534;
+  --k-yellow:#EAB308; --h-yellow:#FEF9C3; --h-yellow-ink:#854D0E;
+  --k-orange:#F97316; --h-orange:#FFEDD5; --h-orange-ink:#9A3412;
+  --k-red:#EF4444;    --h-red:#FEE2E2;    --h-red-ink:#991B1B;
+  --k-pink:#EC4899;   --h-pink:#FCE7F3;   --h-pink-ink:#9D174D;
+  --k-purple:#A855F7; --h-purple:#F3E8FF; --h-purple-ink:#6B21A8;
+  --k-gray:#6B7280;   --h-gray:#F3F4F6;   --h-gray-ink:#374151;
 
   /* шапки колонок: пастельный ряд (тёмный текст) и насыщенный (белый текст) */
   --c-red:#F4A9A8; --c-orange:#F7C08E; --c-yellow:#F6DC7E; --c-green:#ACD79B; --c-teal:#90D8CE;
@@ -276,9 +280,11 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .chip.due.late{background:var(--danger-soft);color:var(--danger)}
 /* имя badge выбрано намеренно: subs и talk заняты блоками подзадач и комментариев */
 .chip.badge{font-family:var(--f-mono);font-size:11px}
-/* цвет типа и статуса приходит парой --kb (фон) / --ki (текст) */
-.chip.kind,.chip.st{background:var(--kb,var(--accent-soft));color:var(--ki,var(--accent));
+/* метка типа и статуса: светлый фон --kb, тёмный текст --kt, яркие иконка и точка --ki */
+.chip.kind,.chip.st{background:var(--kb,var(--accent-soft));color:var(--kt,var(--accent));
   overflow:hidden;text-overflow:ellipsis}
+.chip.kind svg{stroke:var(--ki,currentColor)}
+.chip.st::before{content:"";width:6px;height:6px;border-radius:50%;flex:none;background:var(--ki,var(--accent))}
 .chip svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:1.9;
   stroke-linecap:round;stroke-linejoin:round;flex:none}
 .card-foot{display:flex;align-items:center;gap:9px}
@@ -501,7 +507,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .seg.kinds button svg{width:13px;height:13px;fill:none;stroke:var(--ki,currentColor);stroke-width:1.8;
   stroke-linecap:round;stroke-linejoin:round}
 .seg.kinds button[aria-pressed="true"]{background:var(--kb,var(--accent-soft));
-  border-color:var(--ki,var(--accent));color:var(--ki,var(--accent))}
+  border-color:var(--ki,var(--accent));color:var(--kt,var(--accent))}
 .seg.kinds button.add{border-style:dashed;color:var(--ink-3)}
 .seg.kinds button.add:hover{color:var(--accent);border-color:var(--accent)}
 .seg .tints{gap:4px}
@@ -728,6 +734,8 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 /* кружок показываем насыщенным цветом текста: пастельные фоны на глаз почти не различить */
 .tint i{width:20px;height:20px;border-radius:50%;background:var(--ki)}
 .tint[aria-pressed="true"]{border-color:var(--ki)}
+/* во всплывающем окне все 10 цветов — одной строкой */
+.sheet .tints{gap:1px}
 .tint.none i{background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--line-2)}
 .icons{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
 .icons button{aspect-ratio:1;border-radius:var(--r-s);display:grid;place-items:center;
@@ -928,9 +936,10 @@ var NOTE_KINDS=[{id:"memo",label:"Заметка",icon:"note"},{id:"deal",label:
                 {id:"meet",label:"Встреча",icon:"calendar"},{id:"howto",label:"Инструкция",icon:"book"},
                 {id:"links",label:"Ссылки",icon:"link"},{id:"idea",label:"Идея",icon:"idea"}];
 /* цвета типов, статусов и заметок: пастельные пары фон/текст --h-* */
-var TINTS=[{id:"gray",label:"Серый"},{id:"red",label:"Красный"},{id:"orange",label:"Оранжевый"},
-           {id:"yellow",label:"Жёлтый"},{id:"green",label:"Зелёный"},{id:"teal",label:"Бирюзовый"},
-           {id:"blue",label:"Синий"},{id:"purple",label:"Фиолетовый"},{id:"pink",label:"Розовый"}];
+var TINTS=[{id:"blue",label:"Синий"},{id:"sky",label:"Голубой"},{id:"teal",label:"Бирюзовый"},
+           {id:"green",label:"Зелёный"},{id:"yellow",label:"Жёлтый"},{id:"orange",label:"Оранжевый"},
+           {id:"red",label:"Красный"},{id:"pink",label:"Розовый"},{id:"purple",label:"Фиолетовый"},
+           {id:"gray",label:"Серый"}];
 /* цвета шапок колонок: прежние ключи — пастельный ряд, v-* — насыщенный */
 var HUE_ROWS=[
   [{id:"",label:"Без цвета"},{id:"red",label:"Красный"},{id:"orange",label:"Оранжевый"},
@@ -1009,7 +1018,8 @@ var ICON_CHOICES=[["report","Документ"],["learn","Обучение"],["i
   ["code","Код"],["cart","Покупки"],["coin","Деньги"],["pin","Место"],["bell","Напоминание"],
   ["rocket","Запуск"],["clock","Время"],["calendar","Календарь"],["book","Книга"],["link","Ссылка"]];
 function ic(name){return '<svg viewBox="0 0 24 24" aria-hidden="true">'+(ICONS[name]||ICONS.note)+"</svg>";}
-function tint(t){t=find(TINTS,t)?t:"gray";return "--kb:var(--h-"+t+");--ki:var(--h-"+t+"-ink)";}
+/* цвет из общей палитры: --kb светлый фон, --ki яркий (иконка, точка), --kt тёмный текст */
+function tint(t){t=find(TINTS,t)?t:"gray";return "--kb:var(--h-"+t+");--ki:var(--k-"+t+");--kt:var(--h-"+t+"-ink)";}
 function prioVar(p){return "var(--p-"+p+")";}
 function prioSoft(p){return "var(--p-"+p+"-soft)";}
 function labelOf(list,id,dflt){for(var i=0;i<list.length;i++){if(list[i].id===id)return list[i].label;}return dflt||"";}

@@ -93,7 +93,7 @@
 
 /* блок задачи: цвет типа, у задачи без типа — акцент режима */
 .lblk{position:absolute;z-index:1;border-radius:6px;padding:3px 6px;text-align:left;overflow:hidden;
-  background:var(--kb,var(--accent-soft));color:var(--ki,var(--accent));border-left:3px solid var(--ki,var(--accent));
+  background:var(--kb,var(--accent-soft));color:var(--kt,var(--accent));border-left:3px solid var(--ki,var(--accent));
   font-size:11.5px;line-height:1.3;box-shadow:0 0 0 1px var(--surface)}
 .lblk b{display:block;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lblk.done b{text-decoration:line-through;color:var(--ink-3);font-weight:500}

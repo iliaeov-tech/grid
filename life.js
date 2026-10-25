@@ -112,11 +112,15 @@ function setMeta(key,value){
   saved(write("meta",{key:key,value:value,updatedAt:Date.now()}));
 }
 /* настройки Grid Life живут на этом устройстве, вместе с задачами.
-   view "last" — открывать вид, на котором закончили */
-var LPREFS={view:"last",weekStart:1,h24:true,duration:0,overdue:"block",hidePastDone:false,backupEvery:"week"};
+   view "last" — открывать вид, на котором закончили;
+   remindMode — о каких задачах напоминать, remindDefault — за сколько минут,
+   remindAllDay — во сколько напоминать о задачах на весь день,
+   remindTitle — показывать ли название в уведомлении (null — да, если нет PIN) */
+var LPREFS={view:"last",weekStart:1,h24:true,duration:0,overdue:"block",hidePastDone:false,backupEvery:"week",
+  remindMode:"all",remindDefault:0,remindAllDay:"09:00",remindTitle:null};
 function lp(){return Object.assign({},LPREFS,L.meta.prefs||{});}
-function setPref(k,v){var p=lp();p[k]=v;setMeta("prefs",p);}
-function putTask(t){touch(t);saved(write("tasks",t));askPersist();}
+function setPref(k,v){var p=lp();p[k]=v;setMeta("prefs",p);remindChanged();}
+function putTask(t){touch(t);saved(write("tasks",t));askPersist();remindChanged();}
 /* постоянное хранение просим при первой записи: без него браузер может
    очистить данные, когда на устройстве кончается место */
 var persistAsked=false;
@@ -320,7 +324,7 @@ function removeTask(id){
 
 /* Правка и удаление повтора. scope: "one" — только этот повтор, "next" —
    этот и следующие (серия делится на две), "all" — вся серия. */
-var OCC_FIELDS=["title","date","time","end","kind","priority","desc"];
+var OCC_FIELDS=["title","date","time","end","kind","priority","desc","remind"];
 function splitSeries(t,orig){
   var before=seriesDates(t,t.date,addDays(orig,-1)).length;
   var nt=Object.assign({},t,{id:newId(),date:orig,occ:{},repeat:Object.assign({},t.repeat),createdAt:Date.now()});
@@ -741,6 +745,7 @@ function panelHTML(){
           '<span>–</span><input type="time" data-lf="end" value="'+esc(t.end)+'" aria-label="Окончание, необязательно"></div>'+
           '<p class="hint">Окончание можно не указывать.</p>')+"</div>"+
       '<span class="lbl">Повтор</span><div class="ctl">'+repeatHTML(t)+"</div>"+
+      '<span class="lbl">Напоминания</span><div class="ctl">'+remindHTML(t)+"</div>"+
       '<span class="lbl">Тип</span><div class="ctl"><div class="seg kinds">'+ks.map(function(k){
           return '<button data-lkind="'+esc(k.id)+'" aria-pressed="'+(t.kind===k.id)+'" style="'+K.tint(k.color)+'">'+ic(k.icon)+esc(k.label)+"</button>";
         }).join("")+'<button class="add" data-lknew="1">'+ic("plus")+"Свой тип</button></div></div>"+
@@ -801,6 +806,12 @@ panel.addEventListener("click",function(e){
       K.flash(sc==="one"?"Повтор удалён":"Повторы удалены");
     });
     return;}
+  if((b=t.closest("[data-lremdel]"))){var gone=+b.dataset.lremdel;setField("remind",remindsOf(task).filter(function(m){return m!==gone;}));return;}
+  if(t.closest("[data-lremreset]")){setField("remind",null);return;}
+  if(t.closest("[data-lremok]")){
+    var n=K.clamp(Math.round(+$("[data-lremn]",panel).value||1),1,99)*(+$("[data-lremu]",panel).value);
+    P.remCustom=false; addRemind(task,Math.min(n,REMIND_MAX)); return;}
+  if(t.closest("[data-lics]")){var src=series()||taskById(P.id);if(src) downloadICS(src);return;}
   if(t.closest("[data-lfile]")){pickFile(task.id);return;}
   if((b=t.closest("[data-lfopen]"))){openFile(b.dataset.lfopen);return;}
   if((b=t.closest("[data-lfdel]"))) dropFile(b.dataset.lfdel);
@@ -833,6 +844,11 @@ panel.addEventListener("change",function(e){
     if(v==="none"){setField("repeat",null);return;}
     if(v==="custom"){if(task.repeat) repaintPanel(); else setRepeat(function(){});return;}
     setRepeat(function(r){r.freq=v==="2week"?"week":v;r.every=v==="2week"?2:1;});
+    return;
+  }
+  if(t.matches("[data-lremadd]")){
+    if(t.value==="custom"){P.remCustom=true;repaintPanel();return;}
+    if(t.value!=="") addRemind(task,+t.value);
     return;
   }
   if(t.matches("[data-lrevery]")){var n=K.clamp(Math.round(+t.value||1),1,99);setRepeat(function(r){r.every=n;});return;}
@@ -975,7 +991,7 @@ function importBackup(){
         L.tasks=d.tasks; L.kinds=d.kinds||[]; L.files=files;
         BACKUP_META.forEach(function(k){if(d.settings&&d.settings[k]!=null) setMeta(k,d.settings[k]);});
         setMeta("lastBackupAt",Date.now());
-        render(); K.renderSide(); K.renderSettings();
+        render(); K.renderSide(); K.renderSettings(); remindChanged();
         K.flash("Копия восстановлена: задач — "+d.tasks.length);
       });
     }).catch(function(e){K.flash("Не удалось восстановить: "+(e&&e.message||"файл повреждён"));});
@@ -1185,6 +1201,9 @@ function forgotPin(){
 /* ═════════ хранилище: очистка и удаление ═════════ */
 /* всё Grid Life на этом устройстве: задачи, типы, файлы, настройки и PIN */
 function wipeAll(){
+  /* сервер забывает устройство вместе с его напоминаниями */
+  if(L.meta.pushLife) lifeCall({life:"off",token:L.meta.deviceToken}).catch(function(){
+    K.flash("Напоминания на сервере не удалось выключить — нет связи. Уже отправленные придут без названия ещё до 60 дней.");});
   return Promise.all(["tasks","kinds","files","meta"].map(function(s){return write(s,[],true);})).then(function(){
     L.tasks=[]; L.kinds=[]; L.files=[]; L.meta={};
     setMeta("firstUseAt",Date.now());
@@ -1230,6 +1249,190 @@ function estimate(){
   navigator.storage.estimate().then(function(e){L.estimate=e;K.renderSettings();},function(){});
 }
 
+/* ═════════ напоминания ═════════ */
+/* У задачи свой список в remind — минуты до начала (0 — в момент начала,
+   [] — без напоминаний) — или, если его нет, по настройке «Напоминать».
+   Начало задачи на весь день — время из настроек (по умолчанию 9:00).
+   Пока Grid открыт, напоминает он сам. Чтобы напомнить, когда он закрыт,
+   устройство отправляет в функцию grid-push только время и случайный номер
+   каждого напоминания на 60 дней вперёд; карту «номер → задача» хранит у
+   себя, и sw.js показывает по ней название. */
+var REMINDS=[[0,"В момент начала"],[5,"За 5 минут"],[15,"За 15 минут"],[30,"За 30 минут"],[60,"За 1 час"],[1440,"За 1 день"]];
+var REMIND_MAX=7*1440,REMIND_DAYS=60;
+function remindLabel(m){
+  var f=REMINDS.filter(function(r){return r[0]===m;})[0];
+  if(f) return f[1];
+  if(m%1440===0) return "За "+m/1440+" "+plural(m/1440,"день","дня","дней");
+  if(m%60===0) return "За "+m/60+" "+plural(m/60,"час","часа","часов");
+  return "За "+m+" "+plural(m,"минуту","минуты","минут");
+}
+function remindsOf(t){
+  var p=lp();
+  if(p.remindMode==="off") return [];
+  if(Array.isArray(t.remind)) return t.remind;
+  return p.remindMode==="all"||p.remindMode==="important"&&(t.priority==="high"||t.priority==="urgent")?[+p.remindDefault||0]:[];
+}
+function startOf(it){
+  var hm=(it.t.time||lp().remindAllDay||"09:00").split(":"),d=K.parseISO(it.date);
+  d.setHours(+hm[0],+hm[1],0,0);
+  return d.getTime();
+}
+/* напоминания, которые срабатывают в промежутке (from, to], по времени */
+function remindersBetween(from,to){
+  var out=[],a=K.iso(new Date(from)),b=addDays(K.iso(new Date(to)),REMIND_MAX/1440+1);
+  live().forEach(function(t){
+    if(!t.date) return;
+    (t.repeat?occurrencesIn(t,a,b):t.date>=a&&t.date<=b?[item(t,t.date)]:[]).forEach(function(it){
+      if(it.done) return;
+      var s=startOf(it);
+      remindsOf(it.t).forEach(function(m){
+        var at=s-m*60000;
+        if(at>from&&at<=to) out.push({k:it.key,at:at,it:it});
+      });
+    });
+  });
+  return out.sort(function(x,y){return x.at-y.at;});
+}
+/* «Сегодня в 15:00» — относительно дня, когда сработает напоминание */
+function whenText(it,at){
+  var fd=K.iso(new Date(at)),d=it.date,t=it.t.time;
+  return (d===fd?"Сегодня":d===addDays(fd,1)?"Завтра":cap(wd(d))+", "+longDate(d))+(t?" в "+fmtTime(t):", весь день");
+}
+function titleShown(){var p=lp();return p.remindTitle===true||p.remindTitle!==false&&!L.meta.pin;}
+
+/* Пока Grid открыт. Если включены push-напоминания, их шлёт сервер — иначе
+   пришли бы дважды. После сна устройства не показываем пропущенное старше
+   10 минут: «напоминание» о прошедшем только мешает. */
+var tickAt=Date.now();
+function remindTick(){
+  var now=Date.now(),from=Math.max(tickAt,now-600000),granted=window.Notification&&Notification.permission==="granted"; tickAt=now;
+  if(!L.ready||L.meta.pushLife&&granted) return;
+  var due=remindersBetween(from,now); if(!due.length) return;
+  var x=due[0],show=titleShown(),title=show?x.it.t.title||"Без названия":"Grid Life";
+  var body=(show?"":"Напоминание · ")+whenText(x.it,x.at)+(due.length>1?" · и ещё "+(due.length-1):"");
+  var url="grid.html#life="+encodeURIComponent(x.k);
+  if(granted&&navigator.serviceWorker&&navigator.serviceWorker.controller){
+    navigator.serviceWorker.ready.then(function(reg){
+      reg.showNotification(title,{body:body,tag:"life-"+x.k,icon:"icons/grid-192.png",data:{url:url}});});
+    return;
+  }
+  K.flash((show?title:"Напоминание Grid Life")+" — "+body.replace(/^Напоминание · /,""),
+    function(){location.hash="#life="+encodeURIComponent(x.k);},"Открыть");
+}
+setInterval(remindTick,20000);
+
+/* запрос к функции grid-push от имени устройства Grid Life */
+function lifeCall(body){
+  if(!K.push.url()) return Promise.reject(new Error("сервер Grid не настроен"));
+  return fetch(K.push.url(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+    .then(function(r){
+      return r.json().catch(function(){return {};}).then(function(d){
+        if(!r.ok) throw new Error(d.error||"ошибка "+r.status); return d;});
+    });
+}
+/* Отправить список напоминаний, если он изменился. Номера каждый раз новые:
+   сервер не может связать напоминания одной задачи между отправками.
+   Без связи — отправим при следующем изменении или открытии Grid. */
+var syncT=null;
+function remindChanged(){
+  if(!L.meta.pushLife) return;
+  clearTimeout(syncT); syncT=setTimeout(function(){syncRemind().catch(function(){});},1500);
+}
+function syncRemind(force){
+  if(!L.ready||!L.meta.pushLife||!window.Notification||Notification.permission!=="granted") return Promise.resolve();
+  var now=Date.now(),list=remindersBetween(now,now+REMIND_DAYS*864e5).slice(0,300);
+  return K.push.subscription(true).then(function(sub){
+    var j=sub.toJSON(),sig=j.endpoint+"|"+list.map(function(x){return x.k+"@"+x.at;}).join(",");
+    if(!force&&sig===L.meta.remindSig) return;
+    var map={},items=list.map(function(x){
+      var rid=b64u(rnd(12)); map[rid]={k:x.k,w:whenText(x.it,x.at)};
+      return {rid:rid,at:new Date(x.at).toISOString()};
+    });
+    return lifeCall({life:"save",token:L.meta.deviceToken,sub:j,items:items}).then(function(){
+      setMeta("remind",map); setMeta("remindSig",sig);});
+  });
+}
+function enableLifePush(){
+  K.push.ask().then(function(){return K.push.subscription(true);}).then(function(){
+    if(!L.meta.deviceToken) setMeta("deviceToken",b64u(rnd(32)));
+    setMeta("pushLife",true);
+    return syncRemind(true);
+  }).then(function(){K.renderSettings(true);K.flash("Напоминания придут, даже когда Grid закрыт");},
+    function(e){setMeta("pushLife",false);K.renderSettings(true);K.flash(K.push.error(e));});
+}
+function disableLifePush(){
+  lifeCall({life:"off",token:L.meta.deviceToken}).then(function(){
+    setMeta("pushLife",false); setMeta("remind",{}); setMeta("remindSig","");
+    K.flash("Напоминания на закрытом Grid выключены");
+  },function(e){K.flash("Не удалось выключить: "+e.message+". Попробуйте ещё раз.");})
+    .then(function(){K.renderSettings(true);});
+}
+function testLifePush(){
+  lifeCall({life:"test",token:L.meta.deviceToken}).then(function(d){
+    K.flash(d.sent?"Пробное напоминание отправлено":"Не удалось отправить пробное напоминание");
+  },function(e){K.flash("Не удалось отправить пробное напоминание: "+e.message);});
+}
+
+/* поле «Напоминания» в задаче; P.remCustom — открыт ввод своего времени */
+function remindHTML(t){
+  var p=lp(),own=Array.isArray(t.remind),list=remindsOf(t).slice().sort(function(a,b){return a-b;});
+  if(p.remindMode==="off") return '<p class="hint" style="margin-top:9px">Напоминания выключены в настройках Grid Life.</p>';
+  var h='<div class="lrem">'+list.map(function(m){
+    return '<span class="rc">'+esc(remindLabel(m))+'<button class="x" data-lremdel="'+m+'" aria-label="Убрать: '+esc(remindLabel(m))+'">'+K.X_BTN+"</button></span>";
+  }).join("")+"</div>";
+  h+='<select data-lremadd="1" aria-label="Добавить напоминание"><option value="">'+(list.length?"Ещё напоминание…":"Добавить напоминание…")+"</option>"+
+    REMINDS.filter(function(r){return list.indexOf(r[0])<0;}).map(function(r){return '<option value="'+r[0]+'">'+r[1]+"</option>";}).join("")+
+    '<option value="custom">Своё время…</option></select>';
+  if(P.remCustom) h+='<div class="rep-row"><span>За</span><input type="number" min="1" max="99" value="10" data-lremn="1" aria-label="Сколько">'+
+    '<select data-lremu="1" aria-label="Чего"><option value="1">минут</option><option value="60">часов</option><option value="1440">дней</option></select>'+
+    '<button class="btn ghost" data-lremok="1">Добавить</button></div>';
+  var note=own?(list.length?"":"Без напоминаний. ")+'<button class="lnk" data-lremreset="1">Как в настройках</button>'
+    :list.length?"Как в настройках."
+    :p.remindMode==="important"?"В настройках — только о важных задачах.":"В настройках — только о выбранных: добавьте напоминание, если нужно.";
+  h+='<p class="hint">'+note+"</p>";
+  if(t.date&&!P.draft) h+='<button class="lnk lics" data-lics="1">'+ic("calendar")+"Добавить в календарь телефона</button>";
+  return h;
+}
+function addRemind(task,m){
+  var l=remindsOf(task).slice();
+  if(l.indexOf(m)<0) l.push(m);
+  setField("remind",l.sort(function(a,b){return a-b;}));
+}
+
+/* «Добавить в календарь телефона»: файл .ics с повтором и напоминаниями —
+   календарь напомнит и без интернета. Google Календарь напоминания из
+   файла не берёт, Календарь iPhone и Outlook — берут. */
+var BYDAY=["MO","TU","WE","TH","FR","SA","SU"];
+function icsWhen(date,time){return date.replace(/-/g,"")+(time?"T"+time.replace(":","")+"00":"");}
+function downloadICS(t){
+  var allDay=!t.time,r=t.repeat,title=t.title||"Без названия";
+  var lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Grid//Life//RU","BEGIN:VEVENT","UID:"+t.id+"@grid-life",
+    "DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,""),
+    allDay?"DTSTART;VALUE=DATE:"+icsWhen(t.date):"DTSTART:"+icsWhen(t.date,t.time)];
+  if(allDay) lines.push("DTEND;VALUE=DATE:"+icsWhen(addDays(t.date,1)));
+  else if(t.end) lines.push("DTEND:"+icsWhen(t.date,t.end));
+  lines.push("SUMMARY:"+K.icsText(title));
+  if(t.desc) lines.push("DESCRIPTION:"+K.icsText(t.desc));
+  if(r){
+    var rule=["FREQ="+{day:"DAILY",week:"WEEKLY",month:"MONTHLY",year:"YEARLY"}[r.freq]];
+    if(+r.every>1) rule.push("INTERVAL="+r.every);
+    if(r.freq==="week") rule.push("BYDAY="+(r.days&&r.days.length?r.days:[wdIdx(t.date)]).slice().sort().map(function(i){return BYDAY[i];}).join(","));
+    if(r.end==="until"&&r.until) rule.push("UNTIL="+icsWhen(r.until)+(allDay?"":"T235959"));
+    if(r.end==="count") rule.push("COUNT="+Math.max(1,+r.count||1));
+    lines.push("RRULE:"+rule.join(";"));
+    var gone=Object.keys(t.occ||{}).filter(function(d){return t.occ[d].deleted;}).sort();
+    if(gone.length) lines.push((allDay?"EXDATE;VALUE=DATE:":"EXDATE:")+gone.map(function(d){return icsWhen(d,t.time);}).join(","));
+  }
+  /* у задачи на весь день напоминание считается от полуночи */
+  var base=allDay?minutes(lp().remindAllDay||"09:00"):0;
+  remindsOf(t).forEach(function(m){
+    var d=base-m;
+    lines.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+K.icsText(title),"TRIGGER:"+(d<0?"-":"")+"PT"+Math.abs(d)+"M","END:VALARM");
+  });
+  lines.push("END:VEVENT","END:VCALENDAR");
+  K.saveBlob(new Blob([lines.map(K.icsFold).join("\r\n")+"\r\n"],{type:"text/calendar;charset=utf-8"}),K.fileName(title,"Задача")+".ics");
+}
+
 /* ═════════ настройки ═════════ */
 function sec(id,title,html){
   return '<section class="set" data-lset="'+id+'"'+(id==="calendar"?"":' style="margin-top:22px"')+'><div class="sect-h"><h3>'+
@@ -1243,6 +1446,37 @@ function pick(key,label,opts){
 function toggle(attr,on,title,note){
   return '<label class="switch"><input type="checkbox" '+attr+(on?" checked":"")+"><span><b>"+title+"</b>"+
     (note?"<small>"+note+"</small>":"")+"</span></label>";
+}
+/* открытый ключ спрашиваем у функции grid-push: так видно, настроены ли push-напоминания */
+function checkPushKey(){
+  if(!K.push.url()||L.pushKey==="ok"||L.pushKey==="loading") return;
+  L.pushKey="loading";
+  K.push.key().then(function(){L.pushKey="ok";},function(){L.pushKey="off";}).then(function(){K.renderSettings();});
+}
+function remindSetHTML(p){
+  var sup=K.push.support(),on=!!L.meta.pushLife&&sup==="ok"&&Notification.permission==="granted",push;
+  checkPushKey();
+  if(!K.push.url()||L.pushKey==="off")
+    push='<div class="drop-hint">Push-напоминания идут через сервер Grid, а он ещё не настроен: владельцу Grid нужна функция grid-push в Supabase — шаги в README.</div>';
+  else if(sup==="home")
+    push='<div class="drop-hint">На iPhone напоминания на закрытом Grid приходят, только если он добавлен на экран «Домой»: Safari → «Поделиться» → '+
+      "«На экран „Домой“». Потом откройте Grid с иконки и включите их здесь.</div>";
+  else if(sup==="no") push='<div class="drop-hint">Этот браузер не умеет показывать уведомления.</div>';
+  else push=toggle('data-lpush="1"',on,"Напоминать, когда Grid закрыт",sup==="denied"
+      ?"Уведомления запрещены в настройках браузера или телефона — разрешите их для Grid, затем включите здесь."
+      :"Придёт push-уведомление, даже если Grid закрыт.")+
+    (on?'<div class="row"><button class="btn ghost" data-lpushtest="1">Прислать пробное</button></div>':"");
+  return pick("remindMode","Напоминать",[["all","обо всех задачах"],["important","только о важных"],["manual","только о выбранных"],["off","не напоминать"]])+
+    (p.remindMode==="off"?"":pick("remindDefault","Напоминание по умолчанию",REMINDS)+
+      '<label class="opt"><span>Задачи на весь день — в</span><input class="in" type="time" data-lpref="remindAllDay" value="'+
+        esc(p.remindAllDay)+'" aria-label="Время напоминания о задачах на весь день"></label>'+
+      '<p class="small">Важные — с высоким и срочным приоритетом. В самой задаче напоминания можно поменять: '+
+        "добавить несколько, своё время или убрать. Пока Grid открыт, напоминает он сам.</p>"+
+      push+
+      '<p class="small">На сервер Grid уходят только время напоминания и случайный номер — без названия и описания задачи. '+
+        "Название телефон подставляет сам из данных на этом устройстве.</p>"+
+      toggle('data-lpref="remindTitle"',titleShown(),"Показывать название задачи",
+        "Иначе в уведомлении будет только «Grid Life» и время. Если задан PIN, по умолчанию название скрыто."));
 }
 function settingsHTML(){
   var p=lp(),last=L.meta.lastBackupAt,off=offKinds(),est=L.estimate;
@@ -1260,6 +1494,7 @@ function settingsHTML(){
       toggle('data-lpref="h24"',p.h24,"24-часовой формат","Иначе время показывается как 2:00 PM.")+
       toggle('data-lpref="hidePastDone"',p.hidePastDone,"Скрывать выполненное в прошедших днях",
         "В днях, неделях и месяцах остаётся только невыполненное."))+
+    sec("remind","Напоминания",remindSetHTML(p))+
     sec("types","Типы задач",
       "<div>"+kindsAll(true).map(function(k){
         var std=!!K.find(LIFE_KINDS,k.id),on=off.indexOf(k.id)<0;
@@ -1285,7 +1520,8 @@ function settingsHTML(){
       toggle("data-lopenlife",openLife(),"Открывать приложение в Grid Life","Иначе Grid откроется там, где вы были в прошлый раз."))+
     sec("storage","Хранилище",
       "<p>Задачи, типы и файлы Grid Life хранятся только на этом устройстве, в этом браузере. "+
-        "Ничего не отправляется на сервер, вход не нужен, всё работает без интернета.</p>"+
+        "Вход не нужен, всё работает без интернета. На сервер ничего не отправляется — кроме времени напоминаний, "+
+        "если включить их на закрытом Grid.</p>"+
       '<div class="meter-h"><span>Задачи и типы: '+K.fmtSize(dataSize)+" · файлы: "+K.fmtSize(filesSize)+"</span></div>"+
       (est&&est.quota?'<div class="meter" role="progressbar" aria-label="Занято места в браузере" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+
           pct+'"><i style="width:'+pct+'%"></i></div>'+
@@ -1383,6 +1619,7 @@ function onSettingsClick(e){
   }
   else if(t.closest("[data-lcleango]")) cleanDone(+$("[data-lclean]",e.currentTarget).value);
   else if(t.closest("[data-lwipe]")) askWipe();
+  else if(t.closest("[data-lpushtest]")) testLifePush();
   else if(t.closest("[data-linstall]")&&installEvt){
     installEvt.prompt(); installEvt.userChoice.then(function(){installEvt=null;K.renderSettings();});
   }
@@ -1391,11 +1628,15 @@ function onSettingsChange(e){
   if(!isLife()) return;
   var t=e.target,k=t.dataset.lpref;
   if(k){
-    setPref(k,t.type==="checkbox"?t.checked:/^(weekStart|duration)$/.test(k)?Number(t.value):t.value);
+    setPref(k,t.type==="checkbox"?t.checked:/^(weekStart|duration|remindDefault)$/.test(k)?Number(t.value):
+      t.type==="time"?t.value||LPREFS[k]:t.value);
     if(k==="view"&&t.value!=="last") setView(t.value);
     if(k==="overdue") autoMove();
+    if(k==="remindMode") K.renderSettings(true);
     render(); K.renderSide(); return;
   }
+  /* включение — прямо в нажатии: так Safari спросит разрешение */
+  if(t.matches("[data-lpush]")){if(t.checked) enableLifePush(); else disableLifePush();return;}
   if(t.matches("[data-lkon]")){
     var off=offKinds().filter(function(id){return id!==t.dataset.lkon;});
     if(!t.checked) off.push(t.dataset.lkon);
@@ -1421,16 +1662,35 @@ $("#side").addEventListener("click",onSideClick);
 $("#settings").addEventListener("click",onSettingsClick);
 $("#settings").addEventListener("change",onSettingsChange);
 K.scrim.addEventListener("click",function(){if(isLife())closePanel();});
-/* после сна устройства «сегодня» могло смениться */
-document.addEventListener("visibilitychange",function(){if(!document.hidden&&isLife()&&!panelOpen()){autoMove();render();}});
+/* после сна устройства «сегодня» могло смениться, а напоминания на 60 дней вперёд — сдвинуться */
+document.addEventListener("visibilitychange",function(){
+  if(document.hidden) return;
+  syncRemind().catch(function(){});
+  if(isLife()&&!panelOpen()){autoMove();render();}
+});
+setInterval(function(){syncRemind().catch(function(){});},6*3600e3);
+
+/* Данные грузим один раз: при входе в Grid Life или в фоне при открытии Grid,
+   если Grid Life на этом устройстве уже открывали, — ради напоминаний. */
+function ready(){
+  if(!L.loadP) L.loadP=load().then(function(){
+    try{localStorage.setItem("grid.life.used","1");}catch(e){}
+    syncRemind().catch(function(){});
+  });
+  return L.loadP;
+}
 
 /* PIN спрашиваем при каждом входе в Grid Life: close() запирает, show() показывает экран PIN */
 window.GridLife={
+  boot:function(){
+    try{if(localStorage.getItem("grid.life.used")!=="1") return;}catch(e){return;}
+    ready().catch(function(){});
+  },
   show:function(el){
     if(!L.el){
       L.el=el; el.addEventListener("click",onMainClick);
       swiped=K.attachSwipe(el,swipeEl,navStep);
-      L.loading=load().then(function(){
+      ready().then(function(){
         if(lp().view!=="last") L.view=lp().view;
         if(L.meta.pin&&!L.unlocked) showLock();
         render(); checkPersist(); K.renderSide(); autoMove(); openPending();

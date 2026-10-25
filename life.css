@@ -207,6 +207,22 @@
 .lp .rep-end .lbl{font-size:12px;color:var(--ink-3);font-weight:500}
 .lp .rep-pending{margin:-8px 0 0 38px;color:var(--accent)}
 
+/* ── напоминания в панели задачи ── */
+.lp .lrem{display:flex;flex-wrap:wrap;gap:6px}
+.lp .lrem:not(:empty){margin:4px 0 8px}
+.lp .lrem .rc{display:inline-flex;align-items:center;gap:2px;padding:3px 3px 3px 11px;border-radius:99px;
+  background:var(--accent-soft);color:var(--ink);font-size:12.5px;min-height:32px}
+.lp .lrem .x{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:var(--ink-3)}
+.lp .lrem .x:hover{color:var(--danger);background:var(--surface)}
+.lp .lrem .x svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
+.lp .hint .lnk{padding:0;font-size:12px}
+.lp .lics{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:6px 0;font-size:12.5px}
+.lp .lics svg{width:14px;height:14px}
+/* поле времени в настройках Life (напоминания о задачах на весь день) */
+.set .opt input.in[type="time"]{width:auto;min-width:120px;flex:none;-webkit-appearance:none;appearance:none;text-align:left}
+.set .opt input.in[type="time"]::-webkit-date-and-time-value{text-align:left}
+@media (max-width:640px){.set .opt input.in[type="time"]{width:100%}}
+
 /* ── вопрос «эту / эту и последующие / все» ── */
 .ldialog{position:fixed;inset:0;z-index:70;background:rgba(33,38,57,.35);display:grid;place-items:center;padding:20px}
 .ldialog-box{background:var(--surface);border-radius:var(--r-l);box-shadow:var(--sh-2);padding:18px;

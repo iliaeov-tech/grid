@@ -216,14 +216,16 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .grip{width:9px;height:14px;flex:none;opacity:.4;
   background-image:radial-gradient(circle,currentColor 1.1px,transparent 1.2px);
   background-size:4.5px 4.5px}
-.track-name{font-weight:600;font-size:13.5px;flex:1;min-width:0;color:inherit;
+/* название, сразу за ним счётчик, «⋮» — у правого края */
+.track-name{font-weight:600;font-size:13.5px;flex:0 1 auto;min-width:0;color:inherit;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;
   padding:2px 4px;border-radius:4px;border:1px solid transparent;cursor:text}
 .track-name:hover{border-color:currentColor}
 .track-name-in{flex:1;min-width:0;font-weight:600;font-size:13.5px;padding:2px 5px;
   border-radius:4px;border:1px solid var(--accent);background:var(--surface);color:var(--ink)}
-.track-count{font-size:11.5px;flex:none;padding:1px 6px;border-radius:99px;
+.track-count{font-size:11.5px;flex:none;padding:1px 6px;border-radius:99px;margin-left:-2px;
   background:rgba(255,255,255,.6);color:inherit}
+.track-head .icon-btn{margin-left:auto}
 .track-body{flex:1;min-height:44px;overflow-y:auto;overflow-x:hidden;padding:8px;
   display:flex;flex-direction:column;gap:8px;scrollbar-width:thin}
 .track-body.hot{background:var(--accent-soft)}
@@ -2446,7 +2448,7 @@ function menuHTML(items){
 /* меню «⋮» на карточке задачи и подзадачи */
 function cardMenu(anchor,id){
   var c=card(id); if(!c) return;
-  var items=[{act:"open",icon:"open",label:"Открыть"}];
+  var items=[];                        /* открыть — нажатием на саму карточку */
   if(c.parentId) items.push({act:"detach",icon:"detach",label:"Сделать отдельной задачей"});
   else items.push({act:"sub",icon:"plus",label:"Добавить подзадачу"},{act:"archive",icon:"archive",label:"В архив"});
   items.push("-",{act:"del",icon:"trash",label:"Удалить",danger:true});
@@ -2454,8 +2456,7 @@ function cardMenu(anchor,id){
     sh.addEventListener("click",function(e){
       var b=e.target.closest("[data-act]"); if(!b) return;
       var a=b.dataset.act; closeSheet();
-      if(a==="open") openCard(id);
-      else if(a==="sub"){
+      if(a==="sub"){
         openCard(id);
         var i=$("[data-dsubadd]",drawerEl); if(i){i.scrollIntoView({block:"center"});i.focus();}}
       else if(a==="detach") detachCard(id);
@@ -3062,8 +3063,18 @@ function projectHTML(){
           esc(p.descr||"")+"</textarea>"
       :"<p><b>"+esc(p.name)+"</b></p>"+(p.descr?'<p class="pre">'+esc(p.descr)+"</p>":'<p class="small">Описания нет.</p>'))+
     '<label class="switch"><input type="checkbox" data-projmove="1"'+(p.doneMoveDefault!==false?" checked":"")+(own?"":" disabled")+">"+
-      "<span><b>Переносить выполненные задачи</b><small>Так настроятся новые колонки: выполненная задача уезжает в следующую. "+
-      "У существующих колонок перенос меняется в их меню «⋮».</small></span></label>");
+      "<span><b>Переносить выполненные задачи</b><small>Сразу во всех колонках проекта и в новых: выполненная задача уезжает "+
+      "в следующую колонку. У отдельной колонки перенос можно поменять в её меню «⋮».</small></span></label>");
+}
+/* перенос выполненных — сразу у всех колонок проекта; дальше колонку можно переопределить в её меню */
+function setProjectMove(on){
+  patchProject(S.project,{doneMoveDefault:on});
+  cols().forEach(function(c){
+    if(c.doneMove===on) return;
+    c.doneMove=on; w(S.store.update("columns",c.id,{doneMove:on}));
+  });
+  renderMain();
+  flash(on?"Перенос выполненных включён во всех колонках":"Перенос выполненных выключен во всех колонках");
 }
 /* команда проекта: список, роли, приглашения по почте (меняет только владелец) */
 function teamHTML(){
@@ -3359,7 +3370,7 @@ settingsEl.addEventListener("change",function(e){
     v=t.value.trim(); if(!v){t.value=projName();return;}
     patchProject(S.project,{name:v}); renderAll(); return;}
   if(t.matches("[data-projdescr]")){patchProject(S.project,{descr:t.value});return;}
-  if(t.matches("[data-projmove]")){patchProject(S.project,{doneMoveDefault:t.checked});return;}
+  if(t.matches("[data-projmove]")){setProjectMove(t.checked);return;}
   if(t.matches("[data-mrole]")){setRole(t.dataset.mrole,t.value);return;}
   if(t.matches("[data-bkfiles]")){S.bk.files=t.checked;return;}
   if(t.name==="bkScope"){S.bk.all=t.value==="all";renderSettings(true);return;}

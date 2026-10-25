@@ -388,6 +388,43 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
   border-left:1px solid var(--line-2);text-transform:capitalize;overflow:hidden;white-space:nowrap}
 
 /* ───────────────── календарь ───────────────── */
+/* панель видов и навигации — общая с Grid Life (life.css), сетки свои */
+.wc{flex:1;min-height:0;display:flex;flex-direction:column}
+.wc-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden}
+.wc-in{max-width:1100px;margin:0 auto;padding:10px 12px 28px;display:flex;flex-direction:column;gap:16px}
+.wm-head{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.wm-head span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);text-align:center;padding:4px 0 6px}
+.wm-grid{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-l);overflow:hidden}
+/* неделя месяца: ряд чисел, три дорожки полос и строка «ещё N» */
+.wm-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:30px repeat(3,25px) 20px;column-gap:1px;background:var(--line)}
+.wm-day{grid-row:1/-1;background:var(--surface);display:flex;flex-direction:column;align-items:flex-start;padding:3px 5px;min-width:0;text-align:left}
+.wm-day.out{background:var(--surface-2)}
+.wm-day.out .wm-n{color:var(--ink-3)}
+.wm-day.sel{box-shadow:inset 0 0 0 2px var(--accent)}
+.wm-n{font-size:12.5px;font-weight:600;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:none}
+.wm-day.today .wm-n{background:var(--accent);color:var(--accent-ink)}
+.wm-dots{display:none}
+/* полоса задачи — цвет типа: светлый фон, яркая кромка слева, тёмный текст */
+.wm-bar,.ww-bar{z-index:1;min-width:0;height:22px;margin:1px 3px;padding:0 6px;border-radius:5px;text-align:left;
+  font-size:11.5px;font-weight:500;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:var(--kb);color:var(--kt);border-left:3px solid var(--ki)}
+.wm-bar:hover,.ww-bar:hover{filter:brightness(.97)}
+.wm-bar.cl,.ww-bar.cl{margin-left:0;border-left-width:0;border-top-left-radius:0;border-bottom-left-radius:0}
+.wm-bar.cr,.ww-bar.cr{margin-right:0;border-top-right-radius:0;border-bottom-right-radius:0}
+.wm-bar.done,.ww-bar.done{text-decoration:line-through;opacity:.6}
+.wm-more{z-index:1;font-size:11px;color:var(--ink-3);padding:2px 6px;pointer-events:none;white-space:nowrap}
+.wc-day{display:flex;flex-direction:column;gap:6px}
+.wc-day .lday-t{margin:0;padding:4px 2px}
+.ww-head{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-bottom:1px solid var(--line)}
+.ww-dh{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;font-size:11px;color:var(--ink-3);text-transform:uppercase}
+.ww-dh b{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:16px;font-weight:600;color:var(--ink);text-transform:none}
+.ww-dh.today b{background:var(--accent);color:var(--accent-ink)}
+.ww-body{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:repeat(var(--lanes),28px) minmax(220px,1fr);
+  column-gap:1px;background:var(--line);min-height:55vh;border-bottom:1px solid var(--line)}
+.ww-col{grid-row:1/-1;background:var(--surface)}
+.ww-col.today{background:var(--accent-soft)}
+.ww-bar{height:24px;line-height:24px;margin:2px 3px}
+.wd{display:flex;flex-direction:column;gap:8px;max-width:760px;width:100%;margin:0 auto}
 .cal{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
 .cal-day{display:grid;grid-template-columns:104px 1fr;gap:16px;align-items:start}
 .cal-week{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600;
@@ -851,6 +888,16 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
   /* подпись над полем, а не слева: на узкой панели делить ширину нечем */
   .fields{grid-template-columns:1fr;gap:3px 0}
   .fields .lbl{margin-top:9px}
+  /* месяц на телефоне: число и до трёх точек по центру ячейки, как в Grid Life */
+  .wm-week{grid-template-rows:62px}
+  .wm-bar,.wm-more{display:none}
+  .wm-day{align-items:center;justify-content:center;gap:4px;padding:3px 2px}
+  .wm-day .wm-n{width:26px;height:26px;margin:-3px 0 3px}
+  .wm-dots{display:flex;gap:3px;justify-content:center;height:6px}
+  .wm-dots i{width:6px;height:6px;border-radius:50%;flex:none;background:var(--ki,var(--ink-3))}
+  /* «Сегодня» в Grid Work остаётся в панели календаря (в Grid Life — в шапке) */
+  .wc-bar .lt-today{display:inline-flex}
+  .ww-bar{padding:0 3px;font-size:10px}
   .cal-day{grid-template-columns:48px minmax(0,1fr);gap:10px}
   .cal-when .d{font-size:18px}
   .cal-when .mf{display:none}
@@ -2215,42 +2262,221 @@ function renderGantt(){
   mainEl.innerHTML='<div class="pane wide"><div class="gantt">'+head+body+"</div></div>";
 }
 
-/* ═════════ календарь ═════════ */
-function renderCalendar(){
-  var list=projCards().filter(passes).filter(function(c){return c.due;});
-  if(!list.length){
-    mainEl.innerHTML='<div class="empty"><h2>Нет задач с датами</h2>'+
-      "<p>Здесь задачи выстраиваются по дням. Поставьте дедлайн — и задача появится в этом списке.</p></div>";
-    return;
-  }
-  var groups={};
-  list.forEach(function(c){(groups[c.due]=groups[c.due]||[]).push(c);});
-  var keys=Object.keys(groups).sort(),today=todayISO(),ws=prefs().weekStart,week="";
-  mainEl.innerHTML='<div class="pane"><div class="cal">'+keys.map(function(k){
-    var d=parseISO(k),td=(k===today);
-    /* дни разбиты на недели; с какого дня неделя начинается — в личных настройках */
-    var a=new Date(d); a.setDate(a.getDate()-(d.getDay()-ws+7)%7);
-    var b=new Date(a); b.setDate(b.getDate()+6);
-    var head=iso(a)!==week?'<div class="cal-week">'+esc(wDate(a)+" – "+wDate(b))+"</div>":"";
-    week=iso(a);
-    var late=(k<today&&groups[k].some(function(c){return !c.done;}));
-    var when='<div class="cal-when'+(td?" today":late?" late":"")+'">'+
-      '<div class="d">'+d.getDate()+"</div>"+
-      '<div class="m"><span class="mf">'+MONTHS_FULL[d.getMonth()]+'</span><span class="ms">'+MONTHS[d.getMonth()]+"</span>, "+WEEK[d.getDay()]+"</div>"+
-      (td?'<div class="m" style="color:var(--accent)">сегодня</div>'
-        :late?'<div class="m" style="color:var(--danger)">просрочено</div>':"")+"</div>";
-    var items=groups[k].sort(function(a,b){return (a.done?1:0)-(b.done?1:0);}).map(function(c){
-      var col=column(c.columnId),as=person(c.assignee),k=kindInfo("task",c.kind);
-      return '<div class="cal-item'+(c.done?" done":"")+'" data-card="'+esc(c.id)+'" '+
-        'style="--pc:'+prioVar(c.priority||"med")+'">'+
-        '<span class="dot"></span><span class="t">'+(c.parentId?"↳ ":"")+esc(c.title)+"</span>"+
-        '<span class="metas">'+(k?'<span class="meta">'+esc(k.label)+"</span>":"")+
-          '<span class="meta">'+esc(col?col.title:"")+"</span></span>"+
-        (as?avatar(as):"")+
-        "</div>";}).join("");
-    return head+'<section class="cal-day">'+when+'<div class="cal-list">'+items+"</div></section>";
-  }).join("")+"</div></div>";
+/* Свайп для листания календаря на телефоне — в Grid Work и Grid Life.
+   Ловим только явно горизонтальное движение (в полтора раза больше
+   вертикального) от 50 px и не у краёв экрана: там жест «назад» Safari.
+   Пока палец едет, календарь едет вместе с ним. target() — что двигать
+   (null — свайп здесь не работает), step(n) — перелистнуть: 1 вперёд,
+   -1 назад. Возвращает функцию «был ли только что свайп», чтобы конец
+   свайпа не приняли за нажатие на день. */
+var SWIPE_MIN=50,SWIPE_EDGE=20,SWIPE_MS=160,phoneMQ=window.matchMedia("(max-width:640px)");
+function attachSwipe(box,target,step){
+  var s=null,at=0;
+  function reset(el){el.style.transition="transform "+SWIPE_MS+"ms ease-out";el.style.transform="";}
+  box.addEventListener("touchstart",function(e){
+    s=null;
+    if(!phoneMQ.matches||e.touches.length!==1) return;
+    var t=e.touches[0],el=target();
+    if(!el||!el.contains(e.target)||t.clientX<SWIPE_EDGE||t.clientX>window.innerWidth-SWIPE_EDGE) return;
+    s={x:t.clientX,y:t.clientY,dx:0,el:el,on:false};
+  },{passive:true});
+  box.addEventListener("touchmove",function(e){
+    if(!s) return;
+    var t=e.touches[0],dx=t.clientX-s.x,dy=t.clientY-s.y;
+    if(!s.on){
+      if(Math.abs(dx)<10&&Math.abs(dy)<10) return;
+      if(Math.abs(dx)<Math.abs(dy)*1.5){s=null;return;}   /* вертикально — обычная прокрутка */
+      s.on=true; s.el.style.transition="none";
+    }
+    e.preventDefault();
+    s.dx=dx; s.el.style.transform="translateX("+dx+"px)";
+  },{passive:false});
+  box.addEventListener("touchend",function(){
+    var m=s; s=null;
+    if(!m||!m.on) return;
+    at=Date.now();
+    if(Math.abs(m.dx)<SWIPE_MIN){reset(m.el);return;}       /* короткий — на место */
+    /* старое уходит в сторону свайпа, новое въезжает с другой */
+    var w=m.el.offsetWidth,n=m.dx<0?1:-1;
+    m.el.style.transition="transform "+SWIPE_MS+"ms ease-out";
+    m.el.style.transform="translateX("+(-n*w)+"px)";
+    setTimeout(function(){
+      step(n);
+      var el=target(); if(!el) return;
+      el.style.transition="none"; el.style.transform="translateX("+(n*w)+"px)";
+      void el.offsetWidth;
+      reset(el);
+    },SWIPE_MS);
+  });
+  box.addEventListener("touchcancel",function(){if(s&&s.on) reset(s.el);s=null;});
+  return function(){return Date.now()-at<400;};
 }
+
+/* ═════════ календарь ═════════ */
+/* Как в Grid Life: Месяц, Неделя, День, Список; листание стрелками и
+   свайпом на телефоне. Задача с началом и дедлайном — полоса через все дни
+   диапазона, как многодневное событие. Фильтры доски действуют и здесь. */
+var CAL_VIEWS=[{id:"month",label:"Месяц"},{id:"week",label:"Неделя"},{id:"day",label:"День"},{id:"list",label:"Список"}];
+var CAL_LANES=3;                         /* полос в неделе месяца; остальное — «ещё N» */
+S.cal={view:"month",cursor:todayISO(),selected:todayISO()};
+try{var calView0=localStorage.getItem("grid.work.calview");if(find(CAL_VIEWS,calView0))S.cal.view=calView0;}catch(e){}
+function addDay(s,n){var d=parseISO(s);d.setDate(d.getDate()+n);return iso(d);}
+function addMonth(s,n){var d=parseISO(s);d.setDate(1);d.setMonth(d.getMonth()+n);return iso(d);}
+function weekOf(s){var d=parseISO(s);d.setDate(d.getDate()-(d.getDay()-prefs().weekStart+7)%7);return iso(d);}
+function dayName(s){var d=parseISO(s);return WEEK[d.getDay()]+", "+d.getDate()+" "+MONTHS[d.getMonth()];}
+function dayTitle(s){var t=todayISO();return (s===t?"Сегодня, ":s===addDay(t,1)?"Завтра, ":"")+dayName(s);}
+/* задачи с датами под фильтры доски; a…b — с даты начала по дедлайн */
+function calTasks(){
+  return projCards().filter(passes).filter(function(c){return c.due||c.start;}).map(function(c){
+    var a=c.start||c.due,b=c.due||c.start;
+    return a>b?{c:c,a:b,b:a}:{c:c,a:a,b:b};
+  });
+}
+function covering(list,d){return list.filter(function(x){return x.a<=d&&x.b>=d;});}
+/* цвет события — цвет типа задачи, без цвета — нейтральный серый */
+function evTint(c){var k=kindInfo("task",c.kind);return tint(k&&k.color?k.color:"gray");}
+function calTitle(){
+  var v=S.cal.view,c=S.cal.cursor,d=parseISO(c);
+  if(v==="list") return "Все задачи с датами";
+  if(v==="day") return dayTitle(c);
+  if(v==="week"){var s=weekOf(c);return shortDate(parseISO(s))+" – "+shortDate(parseISO(addDay(s,6)));}
+  return MONTHS_FULL[d.getMonth()].charAt(0).toUpperCase()+MONTHS_FULL[d.getMonth()].slice(1)+" "+d.getFullYear();
+}
+function calBarHTML(){
+  var v=S.cal.view,nav=v!=="list";
+  return '<div class="lt wc-bar"><div class="lt-views" role="tablist" aria-label="Вид календаря">'+CAL_VIEWS.map(function(x){
+      return '<button role="tab" data-wcview="'+x.id+'" aria-selected="'+(v===x.id)+'">'+x.label+"</button>";}).join("")+
+    '</div><div class="lt-nav">'+
+      (nav?'<button class="icon-btn" data-wcnav="-1" aria-label="Назад">'+ic("chevL")+"</button>":"")+
+      '<h2 class="lt-title" aria-live="polite">'+esc(calTitle())+"</h2>"+
+      (nav?'<button class="icon-btn" data-wcnav="1" aria-label="Вперёд">'+ic("chevR")+"</button>":"")+
+      '<button class="btn ghost lt-today" data-wctoday="1">Сегодня</button></div></div>';
+}
+/* полосы недели: обрезаем по неделе и раскладываем по дорожкам без наложений */
+function lanes(list,ws){
+  var we=addDay(ws,6),ends=[],w0=parseISO(ws);
+  return list.filter(function(x){return x.a<=we&&x.b>=ws;}).sort(function(p,q){
+    return p.a<q.a?-1:p.a>q.a?1:p.b>q.b?-1:p.b<q.b?1:0;
+  }).map(function(x){
+    var s=x.a<ws?ws:x.a,e=x.b>we?we:x.b,lane=0;
+    while(ends[lane]&&ends[lane]>=s) lane++;
+    ends[lane]=e;
+    return {x:x,lane:lane,from:daysBetween(w0,parseISO(s)),span:daysBetween(parseISO(s),parseISO(e))+1,cl:x.a<ws,cr:x.b>we};
+  });
+}
+function barHTML(e,row,cls){
+  var c=e.x.c;
+  return '<button class="'+cls+(c.done?" done":"")+(e.cl?" cl":"")+(e.cr?" cr":"")+'" data-card="'+esc(c.id)+'" '+
+    'style="grid-column:'+(e.from+1)+" / span "+e.span+";grid-row:"+row+";"+evTint(c)+'" title="'+esc(c.title)+'">'+
+    (c.parentId?"↳ ":"")+esc(c.title)+"</button>";
+}
+function itemHTML(x){
+  var c=x.c,col=column(c.columnId),as=person(c.assignee),k=kindInfo("task",c.kind);
+  return '<div class="cal-item'+(c.done?" done":"")+'" data-card="'+esc(c.id)+'" style="--pc:'+prioVar(c.priority||"med")+'">'+
+    '<span class="dot"></span><span class="t">'+(c.parentId?"↳ ":"")+esc(c.title)+"</span>"+
+    '<span class="metas">'+(x.a!==x.b?'<span class="meta">'+esc(wDate(parseISO(x.a))+" – "+wDate(parseISO(x.b)))+"</span>":"")+
+      (k?'<span class="meta">'+esc(k.label)+"</span>":"")+'<span class="meta">'+esc(col?col.title:"")+"</span></span>"+
+    (as?avatar(as):"")+"</div>";
+}
+function dayList(list,d,hint){
+  var day=covering(list,d),ed=canEdit();
+  return (day.length?'<div class="cal-list">'+day.map(itemHTML).join("")+"</div>":"")+
+    (ed?'<button class="lempty" data-wcnew="'+d+'">'+(day.length?"+ Задача на этот день":hint)+"</button>"
+      :day.length?"":'<div class="drop-hint">Задач нет.</div>');
+}
+function weekdays(){var ws=prefs().weekStart,out=[];for(var i=0;i<7;i++) out.push(WEEK[(ws+i)%7]);return out;}
+function monthHTML(list){
+  var c=S.cal.cursor,start=weekOf(c.slice(0,8)+"01"),td=todayISO(),sel=S.cal.selected,weeks="";
+  for(var w=0;w<6;w++){
+    var ws=addDay(start,w*7),ev=lanes(list,ws),cells="",more="";
+    for(var i=0;i<7;i++){
+      var d=addDay(ws,i),day=covering(list,d);
+      var hidden=ev.filter(function(e){return e.lane>=CAL_LANES&&e.from<=i&&e.from+e.span>i;}).length;
+      cells+='<button class="wm-day'+(d.slice(0,7)!==c.slice(0,7)?" out":"")+(d===td?" today":"")+(d===sel?" sel":"")+
+        '" data-wcday="'+d+'" style="grid-column:'+(i+1)+'" aria-label="'+esc(dayName(d))+(day.length?", задач: "+day.length:"")+'">'+
+        '<span class="wm-n">'+parseISO(d).getDate()+'</span><span class="wm-dots" aria-hidden="true">'+
+        day.slice(0,3).map(function(x){return '<i style="'+evTint(x.c)+'"></i>';}).join("")+"</span></button>";
+      if(hidden) more+='<span class="wm-more" style="grid-column:'+(i+1)+";grid-row:"+(CAL_LANES+2)+'">ещё '+hidden+"</span>";
+    }
+    weeks+='<div class="wm-week">'+cells+ev.filter(function(e){return e.lane<CAL_LANES;}).map(function(e){
+      return barHTML(e,e.lane+2,"wm-bar");}).join("")+more+"</div>";
+  }
+  return '<div class="wm"><div class="wm-head">'+weekdays().map(function(x){return "<span>"+x+"</span>";}).join("")+
+    '</div><div class="wm-grid">'+weeks+'</div></div><section class="wc-day"><h3 class="lday-t'+(sel===td?" today":"")+'">'+
+    esc(dayTitle(sel))+"</h3>"+dayList(list,sel,"Задач нет — нажмите, чтобы добавить")+"</section>";
+}
+function weekHTML(list){
+  var ws=weekOf(S.cal.cursor),td=todayISO(),ev=lanes(list,ws),head="",cols="";
+  var n=ev.reduce(function(m,e){return Math.max(m,e.lane+1);},0);
+  for(var i=0;i<7;i++){
+    var d=addDay(ws,i),p=parseISO(d);
+    head+='<button class="ww-dh'+(d===td?" today":"")+'" data-wcgoto="'+d+'" aria-label="'+esc(dayName(d))+'">'+WEEK[p.getDay()]+"<b>"+p.getDate()+"</b></button>";
+    cols+='<button class="ww-col'+(d===td?" today":"")+'" data-wcday="'+d+'" style="grid-column:'+(i+1)+'" aria-label="Новая задача на '+esc(dayName(d))+'"></button>';
+  }
+  return '<div class="ww"><div class="ww-head">'+head+'</div><div class="ww-body" style="--lanes:'+n+'">'+cols+
+    ev.map(function(e){return barHTML(e,e.lane+1,"ww-bar");}).join("")+"</div></div>";
+}
+function dayHTML(list){return '<div class="wd">'+dayList(list,S.cal.cursor,"Задач нет — нажмите, чтобы добавить")+"</div>";}
+/* список: дни по дедлайну (или по началу), разбитые на недели */
+function listHTML(list){
+  if(!list.length) return '<div class="empty"><h2>Нет задач с датами</h2>'+
+    "<p>Поставьте задаче дедлайн или дату начала — и она появится в календаре.</p></div>";
+  var groups={};
+  list.forEach(function(x){var k=x.c.due||x.c.start;(groups[k]=groups[k]||[]).push(x);});
+  var keys=Object.keys(groups).sort(),today=todayISO(),week="";
+  return '<div class="cal">'+keys.map(function(k){
+    var d=parseISO(k),td=k===today,ws=weekOf(k);
+    var head=ws!==week?'<div class="cal-week">'+esc(wDate(parseISO(ws))+" – "+wDate(parseISO(addDay(ws,6))))+"</div>":"";
+    week=ws;
+    var late=k<today&&groups[k].some(function(x){return !x.c.done;});
+    var when='<div class="cal-when'+(td?" today":late?" late":"")+'">'+'<div class="d">'+d.getDate()+"</div>"+
+      '<div class="m"><span class="mf">'+MONTHS_FULL[d.getMonth()]+'</span><span class="ms">'+MONTHS[d.getMonth()]+"</span>, "+WEEK[d.getDay()]+"</div>"+
+      (td?'<div class="m" style="color:var(--accent)">сегодня</div>':late?'<div class="m" style="color:var(--danger)">просро&shy;чено</div>':"")+"</div>";
+    return head+'<section class="cal-day" data-wcd="'+k+'">'+when+'<div class="cal-list">'+groups[k].sort(function(a,b){
+      return (a.c.done?1:0)-(b.c.done?1:0);}).map(itemHTML).join("")+"</div></section>";
+  }).join("")+"</div>";
+}
+function renderCalendar(){
+  var list=calTasks(),v=S.cal.view,key=v+"|"+(v==="list"?"":S.cal.cursor),old=$(".wc-scroll",mainEl);
+  var same=old&&mainEl.dataset.calkey===key,top=same?old.scrollTop:0;   /* та же страница — прокрутка на месте */
+  mainEl.innerHTML='<div class="wc">'+calBarHTML()+'<div class="wc-scroll"><div class="wc-in">'+
+    (v==="month"?monthHTML(list):v==="week"?weekHTML(list):v==="day"?dayHTML(list):listHTML(list))+"</div></div></div>";
+  mainEl.dataset.calkey=key;
+  if(same) $(".wc-scroll",mainEl).scrollTop=top; else if(v==="list") listToToday();
+}
+function calStep(n){
+  var v=S.cal.view;
+  S.cal.cursor=v==="month"?addMonth(S.cal.cursor,n):addDay(S.cal.cursor,v==="week"?7*n:n);
+  renderMain();
+}
+function calSetView(v){
+  if(v==="week"||v==="day") S.cal.cursor=S.cal.selected;
+  S.cal.view=v; try{localStorage.setItem("grid.work.calview",v);}catch(e){}
+  renderMain();
+}
+/* список открывается на неделе с сегодняшним днём (прошлые задачи — выше), «Сегодня» возвращает к ней */
+function listToToday(){
+  var s=$(".wc-scroll",mainEl),t=todayISO(); if(!s) return;
+  var el=[].filter.call(mainEl.querySelectorAll(".cal-day"),function(x){return x.dataset.wcd>=t;})[0];
+  if(!el){s.scrollTop=s.scrollHeight;return;}
+  var h=el.previousElementSibling; if(h&&h.classList.contains("cal-week")) el=h;
+  s.scrollTop+=el.getBoundingClientRect().top-s.getBoundingClientRect().top-10;
+}
+/* новая задача с этой датой в первой колонке; название сразу можно печатать */
+function quickTask(d){
+  var col=cols()[0]; if(!col){flash("Сначала создайте колонку на доске");return;}
+  var id=uid("t"),body=newCard({columnId:col.id,order:endOf(col.id),title:"Новая задача",due:d});
+  S.cards.push(Object.assign({id:id},body)); w(S.store.set("cards",id,body));
+  S.cal.selected=d; renderMain(); openCard(id,true);
+}
+/* пустой день — новая задача; в месяце день с задачами — выбрать и показать их ниже */
+function calDayClick(d){
+  var has=covering(calTasks(),d).length;
+  if(S.cal.view==="month"&&(has||!canEdit())){S.cal.selected=d;renderMain();return;}
+  if(canEdit()) quickTask(d);
+}
+function calSwipeEl(){var v=S.cal.view;return S.tab!=="calendar"||v==="list"?null:$(v==="month"?".wm-grid":v==="week"?".ww":".wd",mainEl);}
+var calSwiped=attachSwipe(mainEl,calSwipeEl,calStep);
 
 /* ═════════ заметки и файлы ═════════ */
 /* withCard — подписать, к какой задаче или заметке прикреплён файл */
@@ -2513,7 +2739,11 @@ function showDrawer(){
   drawerEl.setAttribute("aria-hidden","false"); renderDrawer(true);
   var b=$(".d-body",drawerEl); if(b) b.scrollTop=0;   /* новая задача — сверху */
 }
-function openCard(id){flushText();S.openNote=null;S.open=id;showDrawer();}
+/* fresh — новая задача: название выделено, можно сразу печатать */
+function openCard(id,fresh){
+  flushText(); S.openNote=null; S.open=id; showDrawer();
+  var t=fresh&&$("[data-dtitle]",drawerEl); if(t){t.focus();t.select();}
+}
 function openNote(id,fresh){
   flushText(); S.open=null; S.openNote=id; showDrawer();
   var t=fresh&&$("[data-ntitle]",drawerEl); if(t){t.focus();t.select();}
@@ -3582,8 +3812,15 @@ function openColMenu(el,col){
 }
 
 mainEl.addEventListener("click",function(e){
-  if(Date.now()-dropAt<220) return;
+  if(Date.now()-dropAt<220||calSwiped()) return;
   var t=e.target,el;
+  /* календарь */
+  if((el=t.closest("[data-wcview]"))){calSetView(el.dataset.wcview);return;}
+  if((el=t.closest("[data-wcnav]"))){calStep(+el.dataset.wcnav);return;}
+  if(t.closest("[data-wctoday]")){S.cal.cursor=S.cal.selected=todayISO();renderMain();if(S.cal.view==="list")listToToday();return;}
+  if((el=t.closest("[data-wcgoto]"))){S.cal.selected=el.dataset.wcgoto;calSetView("day");return;}
+  if((el=t.closest("[data-wcnew]"))){quickTask(el.dataset.wcnew);return;}
+  if((el=t.closest("[data-wcday]"))){calDayClick(el.dataset.wcday);return;}
   if((el=t.closest("[data-check]"))){toggleDone(el.dataset.check);return;}
   if((el=t.closest("[data-expand]"))){
     setExpanded(el.dataset.expand,!S.expanded[el.dataset.expand]);renderMain();return;}
@@ -3988,7 +4225,8 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
   fmtSize:fmtSize,fmtWhen:fmtWhen,flash:flash,openSheet:openSheet,closeSheet:closeSheet,menuHTML:menuHTML,
   drawerHead:drawerHead,X_BTN:X_BTN,CHECK_SVG:CHECK_SVG,closeSide:closeSide,openSettings:openSettings,
   renderSide:renderSide,renderSettings:renderSettings,scrim:scrimEl,
-  typeEditor:typeEditor,kindChip:kindChip,orderBetween:orderBetween,byOrder:byOrder,find:find,setMode:setMode};
+  typeEditor:typeEditor,kindChip:kindChip,orderBetween:orderBetween,byOrder:byOrder,find:find,setMode:setMode,
+  attachSwipe:attachSwipe};
 /* работа без сети и установка на главный экран (только на http/https) */
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
   window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});

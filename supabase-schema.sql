@@ -248,6 +248,13 @@ create index if not exists cards_parent_idx     on public.cards    (parent_id);
 create index if not exists comments_card_idx    on public.comments (card_id, created_at);
 create index if not exists files_project_idx    on public.files    (project_id);
 create index if not exists files_path_idx       on public.files    (path);
+
+-- Поля, добавленные позже: через add column if not exists, чтобы повторный
+-- запуск схемы обновлял и уже созданную базу.
+alter table public.cards add column if not exists pinned boolean not null default false;   -- закреплена вверху колонки
+alter table public.cards add column if not exists color  text    not null default '';      -- цвет карточки из палитры
+alter table public.files add column if not exists note_id text references public.notes(id) on delete cascade;  -- файл заметки
+create index if not exists files_note_idx on public.files (note_id);
 create index if not exists notes_project_idx    on public.notes    (project_id, pos);
 create index if not exists kinds_project_idx    on public.kinds    (project_id, pos);
 

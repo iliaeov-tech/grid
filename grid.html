@@ -250,7 +250,10 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .card:hover{box-shadow:var(--sh-2)}
 .card::before{content:"";position:absolute;left:5px;top:10px;bottom:10px;width:3px;
   border-radius:99px;background:var(--pc,var(--line-2))}
-.card.is-done{background:var(--surface-2)}
+.card{background:var(--cb,var(--surface))}
+.card.is-done{background:var(--cb,var(--surface-2))}
+.c-pin{flex:none;width:15px;height:15px;margin-top:2px;color:var(--ink-3);display:grid;place-items:center}
+.c-pin svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .card.is-done::before{background:var(--line-2)}
 .card.drag-src{opacity:.32}
 .card-top{display:flex;align-items:flex-start;gap:9px}
@@ -448,6 +451,22 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .ncard h4{margin:0;font-size:14.5px;font-weight:600;line-height:1.35;word-break:break-word}
 .ncard p{margin:0;color:var(--ink-2);font-size:13px;line-height:1.5;white-space:pre-wrap;
   word-break:break-word;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+/* картинки заметки — превью квадратами, открываются на весь экран */
+.nthumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-bottom:8px}
+.nthumb{position:relative;aspect-ratio:1;border-radius:var(--r-m);overflow:hidden;background:var(--ground);border:1px solid var(--line)}
+.nthumb-b{display:block;width:100%;height:100%;padding:0}
+.nthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.nthumb .x{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(16,20,32,.55);color:#fff}
+.nthumb .x svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
+.lightbox{position:fixed;inset:0;z-index:92;background:rgba(16,20,32,.92);display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.lightbox img{flex:1;min-height:0;width:100%;object-fit:contain;padding:8px 12px 16px}
+.lb-bar{display:flex;align-items:center;gap:6px;padding:10px 12px;color:#fff}
+.lb-bar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+.lb-bar .icon-btn{color:#fff}
+.lb-bar .icon-btn:hover{background:rgba(255,255,255,.15);border-color:transparent;color:#fff}
+.ncard .top .chip:not(.kind){flex:none}
 .arch{display:flex;flex-direction:column;gap:6px}
 .arow{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:var(--r-m);
   background:var(--surface);box-shadow:var(--sh-1)}
@@ -734,8 +753,10 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 /* кружок показываем насыщенным цветом текста: пастельные фоны на глаз почти не различить */
 .tint i{width:20px;height:20px;border-radius:50%;background:var(--ki)}
 .tint[aria-pressed="true"]{border-color:var(--ki)}
-/* во всплывающем окне все 10 цветов — одной строкой */
+/* во всплывающем окне все 10 цветов — одной строкой; в меню карточки кружки поменьше */
 .sheet .tints{gap:1px}
+.menu .tint{width:22px;height:22px}
+.menu .tint i{width:16px;height:16px}
 .tint.none i{background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--line-2)}
 .icons{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
 .icons button{aspect-ratio:1;border-radius:var(--r-s);display:grid;place-items:center;
@@ -975,6 +996,7 @@ var ICONS={
   cart:'<path d="M3 4h2.5l2.2 11h10.6l2-8H6.6"></path><circle cx="9.5" cy="19.5" r="1.3"></circle><circle cx="17" cy="19.5" r="1.3"></circle>',
   coin:'<circle cx="12" cy="12" r="8.5"></circle><path d="M14.7 9.4c-.5-.9-1.5-1.4-2.7-1.4-1.6 0-2.8.8-2.8 2 0 2.8 5.8 1.4 5.8 4.1 0 1.2-1.3 2-2.9 2-1.3 0-2.4-.5-2.9-1.4M12 6.3V8M12 16.1v1.6"></path>',
   pin:'<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"></path><circle cx="12" cy="10" r="2.3"></circle>',
+  pushpin:'<path d="M9 3.5h6"></path><path d="M10 3.5v5.5L7 13h10l-3-4V3.5"></path><path d="M12 13v7.5"></path>',
   bell:'<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"></path><path d="M10 20.5a2 2 0 0 0 4 0"></path>',
   rocket:'<path d="M5 15c-1.5 1.3-2 4-2 6 2 0 4.7-.5 6-2"></path><path d="M9 18l-3-3c1.5-5 5.5-10.5 14-11-.5 8.5-6 12.5-11 14z"></path><circle cx="15" cy="9" r="1.6"></circle>',
   clock:'<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path>',
@@ -1108,8 +1130,10 @@ function onBoard(c){
 /* живые задачи проекта, включая подзадачи; архив сюда не входит */
 function projCards(){return S.cards.filter(function(c){return c.projectId===S.project&&!c.archived&&onBoard(c);});}
 function topCards(){return projCards().filter(function(c){return !c.parentId;});}
+/* закреплённые задачи всегда вверху колонки, дальше — по порядку */
+function pinFirst(a,b){return (b.pinned?1:0)-(a.pinned?1:0)||byOrder(a,b);}
 function cardsIn(colId){return S.cards.filter(function(c){
-  return c.columnId===colId&&!c.parentId&&!c.archived&&!c.deletedAt;}).sort(byOrder);}
+  return c.columnId===colId&&!c.parentId&&!c.archived&&!c.deletedAt;}).sort(pinFirst);}
 function childrenOf(id){return S.cards.filter(function(c){return c.parentId===id&&!c.archived&&!c.deletedAt;}).sort(byOrder);}
 function archivedCards(){return S.cards.filter(function(c){
   return c.projectId===S.project&&c.archived&&!c.parentId&&onBoard(c);})
@@ -1145,6 +1169,13 @@ function kindsFor(scope,pid){
 function kindInfo(scope,id){
   if(!id) return null;
   return find(scope==="note"?NOTE_KINDS:TASK_KINDS,id)||find(S.kinds,id);
+}
+/* выбор цвета из общей палитры (заметка, карточка); пустое значение — без цвета */
+function tintPick(attr,cur,ro){
+  return '<div class="tints"><button class="tint none" '+attr+'="" aria-pressed="'+!find(TINTS,cur)+
+    '" aria-label="Без цвета" title="Без цвета" style="--ki:var(--accent)"'+(ro||"")+"><i></i></button>"+
+    TINTS.map(function(t){return '<button class="tint" '+attr+'="'+t.id+'" aria-pressed="'+(cur===t.id)+
+      '" aria-label="'+t.label+'" title="'+t.label+'" style="'+tint(t.id)+'"'+(ro||"")+"><i></i></button>";}).join("")+"</div>";
 }
 function kindChip(k){
   return '<span class="chip kind"'+(k.color?' style="'+tint(k.color)+'"':"")+">"+ic(k.icon)+esc(k.label)+"</span>";
@@ -1214,9 +1245,10 @@ var MAP={
   cards:{projectId:"project_id",columnId:"column_id",parentId:"parent_id",order:"pos",
          title:"title",desc:"descr",done:"done",start:"start_on",due:"due",priority:"priority",
          status:"status",kind:"kind",assignee:"assignee",archived:"archived",
-         archivedAt:"archived_at",deletedAt:"deleted_at",createdAt:"created_at",updatedAt:"updated_at"},
+         archivedAt:"archived_at",deletedAt:"deleted_at",createdAt:"created_at",updatedAt:"updated_at",
+         pinned:"pinned",color:"color"},
   comments:{cardId:"card_id",authorId:"author_id",author:"author",body:"body",createdAt:"created_at"},
-  files:{projectId:"project_id",cardId:"card_id",name:"name",size:"size",mime:"mime",
+  files:{projectId:"project_id",cardId:"card_id",noteId:"note_id",name:"name",size:"size",mime:"mime",
          path:"path",createdAt:"created_at"},
   notes:{projectId:"project_id",title:"title",body:"body",color:"color",kind:"kind",
          order:"pos",createdAt:"created_at",updatedAt:"updated_at"},
@@ -1224,13 +1256,14 @@ var MAP={
 };
 var NUM={order:1,size:1},TIME={createdAt:1,updatedAt:1,archivedAt:1,deletedAt:1},
     /* ссылки и даты: пустое значение в базе — null */
-    NULLABLE={parentId:1,assignee:1,start:1,due:1,doneTarget:1,cardId:1,status:1,userId:1,authorId:1,archivedAt:1,deletedAt:1};
+    NULLABLE={parentId:1,assignee:1,start:1,due:1,doneTarget:1,cardId:1,noteId:1,status:1,userId:1,authorId:1,archivedAt:1,deletedAt:1};
 /* что база удаляет вместе со строкой (on delete cascade в supabase-schema.sql) */
 var CASCADE={
   projects:[["project_members","projectId"],["statuses","projectId"],["kinds","projectId"],["columns","projectId"],
             ["cards","projectId"],["notes","projectId"],["files","projectId"]],
   columns:[["cards","columnId"]],
-  cards:[["cards","parentId"],["comments","cardId"],["files","cardId"]]
+  cards:[["cards","parentId"],["comments","cardId"],["files","cardId"]],
+  notes:[["files","noteId"]]
 };
 function cascadeOf(coll,acc){
   acc=acc||{}; acc[coll]=1;
@@ -1472,7 +1505,7 @@ function newCard(o){
   var pid=o.projectId||S.project,st=startStatus(pid),now=Date.now();
   return Object.assign({projectId:pid,columnId:"",parentId:"",order:1000,title:"",desc:"",
     done:false,start:"",due:"",priority:"med",status:st?st.id:"",kind:"",assignee:S.me||"",
-    archived:false,deletedAt:0,createdAt:now,updatedAt:now},o);
+    archived:false,deletedAt:0,pinned:false,color:"",createdAt:now,updatedAt:now},o);
 }
 function addCard(colId,title){
   title=(title||"").trim(); if(!title) return;
@@ -1639,10 +1672,12 @@ var SORTS=[
     val:function(c){var i=statusList(c.projectId).map(function(s){return s.id;}).indexOf(c.status);return i<0?null:i;}}
 ];
 /* Сортировка разовая: она просто переставляет карточки, и дальше их
-   можно двигать руками. Задачи без значения всегда в конце. */
+   можно двигать руками. Задачи без значения всегда в конце, закреплённые —
+   всегда вверху. */
 function sortColumn(colId,key,desc){
   var s=find(SORTS,key); if(!s) return;
   var sorted=cardsIn(colId).sort(function(a,b){
+    if(!!a.pinned!==!!b.pinned) return a.pinned?-1:1;
     var x=s.val(a),y=s.val(b);
     if(x===y) return 0; if(x==null) return 1; if(y==null) return -1;
     var r=typeof x==="string"?x.localeCompare(y,"ru"):x-y;
@@ -1816,7 +1851,9 @@ function patchNote(id,patch,quiet){
 }
 function removeNote(id){
   var n=find(S.notes,id); if(!n) return;
-  if(!confirm("Удалить заметку «"+n.title+"»?")) return;
+  var fs=filesOfNote(id);
+  if(!confirm("Удалить заметку «"+n.title+"»"+(fs.length?" вместе с файлами ("+fs.length+")":"")+"?")) return;
+  removeObjects(fs);                   /* строки файлов удалит база вместе с заметкой */
   S.notes=S.notes.filter(function(x){return x.id!==id;});
   w(S.store.del("notes",id));
   if(S.openNote===id) closeDrawer();
@@ -1826,10 +1863,11 @@ function removeNote(id){
 /* ═════════ файлы ═════════ */
 /* предел одного файла; тот же предел стоит у хранилища в supabase-schema.sql */
 var BUCKET="grid-files",FILE_MAX=10*1024*1024,DEMO_MAX=400*1024;
-function pickFile(cardId){
+/* link — к чему файл: {cardId} задачи, {noteId} заметки или {} — файл проекта */
+function pickFile(link){
   filePick.value=""; filePick.accept="";
   filePick.onchange=function(){
-    var f=filePick.files&&filePick.files[0]; if(f) uploadFile(f,cardId);
+    var f=filePick.files&&filePick.files[0]; if(f) uploadFile(f,link);
   };
   filePick.click();
 }
@@ -1854,7 +1892,7 @@ function shrinkPhoto(f){
     img.src=url;
   });
 }
-function uploadFile(raw,cardId){
+function uploadFile(raw,link){
   var limit=S.store.kind==="supabase"?FILE_MAX:DEMO_MAX;
   shrinkPhoto(raw).then(function(f){
     if(f.size>limit){
@@ -1863,12 +1901,12 @@ function uploadFile(raw,cardId){
       return;
     }
     if(f!==raw) flash("Фото сжато: "+fmtSize(raw.size)+" → "+fmtSize(f.size));
-    storeFile(f,cardId);
+    storeFile(f,link);
   });
 }
-function storeFile(f,cardId){
+function storeFile(f,link){
   var id=uid("f");
-  var meta={projectId:S.project,cardId:cardId||"",name:f.name,size:f.size,
+  var meta={projectId:S.project,cardId:link.cardId||"",noteId:link.noteId||"",name:f.name,size:f.size,
     mime:f.type||"application/octet-stream",path:"",createdAt:Date.now()};
   if(S.store.kind==="supabase"){
     var path=S.project+"/"+id+"-"+f.name.replace(/[^\w.\-]+/g,"_");
@@ -1903,6 +1941,46 @@ function openFile(f){
     a.href=f.data; a.download=f.name; a.rel="noopener";
     document.body.appendChild(a); a.click(); a.remove();
   }else flash("Файл недоступен.");
+}
+/* Адрес картинки для показа: в демо — сама картинка, в базе — подписанная
+   ссылка на час (бакет закрытый); ссылки держим, чтобы не просить заново. */
+var signedURLs={};
+function imageURL(f){
+  if(f.data) return Promise.resolve(f.data);
+  var s=signedURLs[f.path];
+  if(s&&s.until>Date.now()) return Promise.resolve(s.url);
+  return S.store.sb.storage.from(BUCKET).createSignedUrl(f.path,3600).then(function(r){
+    if(r.error||!r.data) throw r.error||new Error("нет ссылки");
+    signedURLs[f.path]={url:r.data.signedUrl,until:Date.now()+3500*1000};
+    return r.data.signedUrl;
+  });
+}
+function fillThumbs(root){
+  $$("[data-fimg]",root).forEach(function(img){
+    var f=find(S.files,img.dataset.fimg); if(!f) return;
+    imageURL(f).then(function(u){img.src=u;},function(){img.alt="Не удалось загрузить";});
+  });
+}
+/* картинка на весь экран: закрыть — крестик, нажатие мимо или Escape */
+var lightboxEl=null;
+function closeLightbox(){if(lightboxEl){lightboxEl.remove();lightboxEl=null;}}
+function showImage(f){
+  closeLightbox();
+  lightboxEl=document.createElement("div");
+  lightboxEl.className="lightbox"; lightboxEl.setAttribute("role","dialog"); lightboxEl.setAttribute("aria-modal","true");
+  lightboxEl.setAttribute("aria-label",f.name);
+  lightboxEl.innerHTML='<div class="lb-bar"><span>'+esc(f.name)+"</span>"+
+    '<button class="icon-btn" data-lbdl="1" aria-label="Скачать" title="Скачать">'+ic("download")+"</button>"+
+    '<button class="icon-btn" data-lbx="1" aria-label="Закрыть" title="Закрыть">'+X_BTN+"</button></div>"+
+    '<img alt="'+esc(f.name)+'">';
+  document.body.appendChild(lightboxEl);
+  var box=lightboxEl;
+  imageURL(f).then(function(u){$("img",box).src=u;},function(){flash("Не удалось открыть картинку");closeLightbox();});
+  box.addEventListener("click",function(e){
+    if(e.target.closest("[data-lbdl]")){openFile(f);return;}
+    if(e.target.closest("[data-lbx]")||e.target===box) closeLightbox();
+  });
+  $("[data-lbx]",box).focus();
 }
 function removeObjects(files){
   var paths=files.map(function(f){return f.path;}).filter(Boolean);
@@ -2009,12 +2087,14 @@ function cardHTML(c,child){
         (open?"Скрыть подзадачи":"Показать подзадачи")+'">'+ic("chev")+"</button>":"")+
       "</div>";
   }
+  /* цвет карточки — светлый оттенок из палитры; полоска приоритета слева остаётся */
   return '<article class="card'+(child?" child":"")+(c.done?" is-done":"")+'" data-card="'+esc(c.id)+'" tabindex="0" '+
-    'style="--pc:'+prioVar(pr)+";--pcs:"+prioSoft(pr)+'">'+
+    'style="--pc:'+prioVar(pr)+";--pcs:"+prioSoft(pr)+(find(TINTS,c.color)?";--cb:var(--h-"+c.color+")":"")+'">'+
     '<div class="card-top"><button class="check" data-check="'+esc(c.id)+'" role="checkbox" '+
     'aria-checked="'+(c.done?"true":"false")+'" aria-label="Выполнено"'+(ed?"":" disabled")+'>'+
     '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"></path></svg></button>'+
     '<div class="c-title">'+esc(c.title)+"</div>"+
+    (c.pinned&&!child?'<span class="c-pin" title="Закреплена вверху колонки" aria-label="Закреплена">'+ic("pushpin")+"</span>":"")+
     (ed?'<button class="kebab" data-cmenu="'+esc(c.id)+'" aria-label="Действия с задачей">'+ic("dots")+"</button>":"")+"</div>"+
     '<div class="chips">'+chips+"</div>"+foot+"</article>";
 }
@@ -2173,21 +2253,28 @@ function renderCalendar(){
 }
 
 /* ═════════ заметки и файлы ═════════ */
+/* withCard — подписать, к какой задаче или заметке прикреплён файл */
 function fileRow(f,withCard,ed){
-  var c=f.cardId?card(f.cardId):null;
+  var c=f.cardId?card(f.cardId):null,n=f.noteId?find(S.notes,f.noteId):null;
   return '<div class="file"><span class="ic"><svg viewBox="0 0 24 24">'+
     '<path d="M6 3h8l4 4v14H6z"></path><path d="M14 3v4h4"></path></svg></span>'+
     '<span class="nm"><b>'+esc(f.name)+"</b><span>"+fmtSize(f.size)+
-      (withCard&&c?" · "+esc(c.title):"")+"</span></span>"+
+      (withCard&&c?" · "+esc(c.title):withCard&&n?" · заметка «"+esc(n.title)+"»":"")+"</span></span>"+
     '<button class="icon-btn" data-fopen="'+esc(f.id)+'" title="Скачать" aria-label="Скачать">'+
       '<svg viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path></svg></button>'+
     (ed?'<button class="x" data-fdel="'+esc(f.id)+'" aria-label="Удалить файл">'+X_BTN+"</button>":"")+"</div>";
 }
+/* файлы заметки; картинки показываются превью прямо в заметке */
+function filesOfNote(id){return S.files.filter(function(f){return f.noteId===id;})
+  .sort(function(a,b){return (a.createdAt||0)-(b.createdAt||0);});}
+function isImage(f){return /^image\//.test(f.mime||"");}
+var CLIP_SVG='<svg viewBox="0 0 24 24"><path d="M20 11l-8.5 8.5a4.5 4.5 0 0 1-6.4-6.4L13 4.8a3 3 0 0 1 4.2 4.2l-8 8a1.5 1.5 0 0 1-2.1-2.1l7.6-7.6"></path></svg>';
 function noteCardHTML(n){
-  var k=kindInfo("note",n.kind),tinted=!!find(TINTS,n.color);
+  var k=kindInfo("note",n.kind),tinted=!!find(TINTS,n.color),nf=filesOfNote(n.id).length;
   return '<article class="ncard'+(tinted?" tinted":"")+'" data-note="'+esc(n.id)+'" tabindex="0"'+
     (tinted?' style="--nb:var(--h-'+n.color+')"':"")+'>'+
-    '<div class="top">'+(k?kindChip(k):"")+"<time>"+esc(fmtWhen(n.updatedAt))+"</time></div>"+
+    '<div class="top">'+(k?kindChip(k):"")+(nf?'<span class="chip" title="Файлы">'+CLIP_SVG+nf+"</span>":"")+
+      "<time>"+esc(fmtWhen(n.updatedAt))+"</time></div>"+
     "<h4>"+esc(n.title||"Без названия")+"</h4>"+
     (n.body?"<p>"+esc(n.body)+"</p>":"")+"</article>";
 }
@@ -2306,6 +2393,7 @@ function cardDrawerHTML(c){
       PRIOS.map(function(p){return '<button data-dprio="'+p.id+'" aria-pressed="'+((c.priority||"med")===p.id)+
         '" style="--pc:'+prioVar(p.id)+";--pcs:"+prioSoft(p.id)+'"'+ro+'><span class="pip"></span>'+esc(p.label)+"</button>";}).join("")+
     "</div></div>"+
+    '<span class="lbl">Цвет</span><div class="ctl">'+tintPick("data-dcolor",c.color,ro)+"</div>"+
     '<span class="lbl">Ответственный</span><div class="ctl"><select data-dassign="1" aria-label="Ответственный"'+ro+'><option value="">Не назначен</option>'+
       team.map(function(m){return '<option value="'+esc(m.id)+'"'+(m.id===c.assignee?" selected":"")+">"+esc(nameOf(m))+"</option>";}).join("")+
     "</select></div>"+
@@ -2366,20 +2454,28 @@ function cardDrawerHTML(c){
     '<span class="stamp">'+(c.updatedAt?"изм. "+fmtWhen(c.updatedAt):"")+"</span></div>";
   return h+body+foot;
 }
+function noteFilesHTML(n,ed){
+  var fs=filesOfNote(n.id),imgs=fs.filter(isImage),docs=fs.filter(function(f){return !isImage(f);});
+  return '<div><div class="sect-h"><h3>Файлы</h3><span class="n">'+fs.length+'</span><span class="sp"></span>'+
+      (ed?'<button class="btn ghost" data-upload="note" style="padding:4px 10px;font-size:12px">Прикрепить</button>':"")+"</div>"+
+    (imgs.length?'<div class="nthumbs">'+imgs.map(function(f){
+      return '<div class="nthumb"><button class="nthumb-b" data-fview="'+esc(f.id)+'" aria-label="Открыть «'+esc(f.name)+'» на весь экран">'+
+        '<img data-fimg="'+esc(f.id)+'" alt=""></button>'+
+        (ed?'<button class="x" data-fdel="'+esc(f.id)+'" aria-label="Удалить «'+esc(f.name)+'»">'+X_BTN+"</button>":"")+"</div>";
+    }).join("")+"</div>":"")+
+    (docs.length?'<div class="files">'+docs.map(function(f){return fileRow(f,false,ed);}).join("")+"</div>":"")+
+    (fs.length?"":'<div class="drop-hint">Картинки покажутся прямо в заметке, остальные файлы — списком.</div>')+"</div>";
+}
 function noteDrawerHTML(n){
   var ed=canEdit(n.projectId),ro=ed?"":" disabled";
   var body='<div class="d-body">'+
     '<textarea class="d-title" data-ntitle="1" rows="1" aria-label="Название заметки"'+(ed?"":" readonly")+">"+esc(n.title)+"</textarea>"+
     '<div class="fields">'+
       '<span class="lbl">Тип</span><div class="ctl">'+kindSeg("note",n.projectId,n.kind)+"</div>"+
-      '<span class="lbl">Цвет</span><div class="ctl"><div class="tints">'+
-        '<button class="tint none" data-ncolor="" aria-pressed="'+!find(TINTS,n.color)+'" aria-label="Без цвета" title="Без цвета" style="--ki:var(--accent)"'+ro+'><i></i></button>'+
-        TINTS.map(function(t){return '<button class="tint" data-ncolor="'+t.id+'" aria-pressed="'+(n.color===t.id)+
-          '" aria-label="'+t.label+'" title="'+t.label+'" style="'+tint(t.id)+'"'+ro+'><i></i></button>';}).join("")+
-      "</div></div>"+
+      '<span class="lbl">Цвет</span><div class="ctl">'+tintPick("data-ncolor",n.color,ro)+"</div>"+
     "</div>"+
     '<textarea class="d-desc n-body" data-nbody="1" placeholder="Текст заметки" aria-label="Текст заметки"'+(ed?"":" readonly")+">"+esc(n.body)+"</textarea>"+
-    "</div>";
+    noteFilesHTML(n,ed)+"</div>";
   var foot='<div class="d-foot">'+(ed?'<button class="btn danger" data-ndel="1">Удалить заметку</button>':"")+
     '<span class="stamp">'+(n.updatedAt?"изм. "+fmtWhen(n.updatedAt):"")+"</span></div>";
   return drawerHead(projName()+" · Заметка")+body+foot;
@@ -2406,6 +2502,7 @@ function renderDrawer(force){
      иначе после любой правки содержимое отбрасывает в самый верх */
   var was=$(".d-body",drawerEl),keep=was?was.scrollTop:0;
   drawerEl.innerHTML=n?noteDrawerHTML(n):cardDrawerHTML(c);
+  fillThumbs(drawerEl);
   var now=$(".d-body",drawerEl);
   if(now&&keep) now.scrollTop=keep;
   var ta=$(".d-title",drawerEl);
@@ -2458,15 +2555,25 @@ function menuHTML(items){
 /* меню «⋮» на карточке задачи и подзадачи */
 function cardMenu(anchor,id){
   var c=card(id); if(!c) return;
-  var items=[];                        /* открыть — нажатием на саму карточку */
-  if(c.parentId) items.push({act:"detach",icon:"detach",label:"Сделать отдельной задачей"});
-  else items.push({act:"sub",icon:"plus",label:"Добавить подзадачу"},{act:"archive",icon:"archive",label:"В архив"});
-  items.push("-",{act:"del",icon:"trash",label:"Удалить",danger:true});
-  openSheet(anchor,menuHTML(items),function(sh){
+  function html(){
+    var items=[];                      /* открыть — нажатием на саму карточку */
+    if(c.parentId) items.push({act:"detach",icon:"detach",label:"Сделать отдельной задачей"});
+    else items.push({act:"pin",icon:"pushpin",label:c.pinned?"Открепить":"Закрепить"},
+      {act:"sub",icon:"plus",label:"Добавить подзадачу"},{act:"archive",icon:"archive",label:"В архив"});
+    return menuHTML(items)+'<hr><div class="cap">Цвет карточки</div><div class="pad">'+tintPick("data-ccolor",c.color)+"</div>"+
+      "<hr>"+menuHTML([{act:"del",icon:"trash",label:"Удалить",danger:true}]);
+  }
+  openSheet(anchor,html(),function(sh){
     sh.addEventListener("click",function(e){
-      var b=e.target.closest("[data-act]"); if(!b) return;
+      var b=e.target.closest("[data-ccolor]");
+      if(b){patchCard(id,{color:b.dataset.ccolor});c=card(id);sh.innerHTML=html();return;}
+      b=e.target.closest("[data-act]"); if(!b) return;
       var a=b.dataset.act; closeSheet();
-      if(a==="sub"){
+      if(a==="pin"){
+        patchCard(id,{pinned:!c.pinned});
+        flash(c.pinned?"Задача закреплена вверху колонки":"Задача откреплена");
+      }
+      else if(a==="sub"){
         openCard(id);
         var i=$("[data-dsubadd]",drawerEl); if(i){i.scrollIntoView({block:"center"});i.focus();}}
       else if(a==="detach") detachCard(id);
@@ -2956,7 +3063,7 @@ function restoreBackup(d){
   function restoreFiles(files,pid){
     return files.filter(function(f){return f.data;}).reduce(function(p,f){
       return p.then(function(){
-        var id=uid("f"),meta={projectId:pid,cardId:f.cardId?map[f.cardId]||"":"",name:f.name,size:f.size,
+        var id=uid("f"),meta={projectId:pid,cardId:f.cardId?map[f.cardId]||"":"",noteId:f.noteId?map[f.noteId]||"":"",name:f.name,size:f.size,
           mime:f.mime||"application/octet-stream",path:"",createdAt:f.createdAt||Date.now()};
         if(S.store.kind!=="supabase") return put("files",id,meta,{data:f.data});
         var path=pid+"/"+id+"-"+String(f.name).replace(/[^\w.\-]+/g,"_");
@@ -3493,7 +3600,7 @@ mainEl.addEventListener("click",function(e){
   if((el=t.closest("[data-addcard]"))){S.composer=el.dataset.addcard;S.composerText="";renderMain();return;}
   if((el=t.closest("[data-compadd]"))){addCard(el.dataset.compadd,S.composerText);S.composerText="";renderMain();return;}
   if(t.closest("[data-compcancel]")){S.composer=null;S.composerText="";renderMain();return;}
-  if((el=t.closest("[data-upload]"))&&el.dataset.upload==="project"){pickFile("");return;}
+  if((el=t.closest("[data-upload]"))&&el.dataset.upload==="project"){pickFile({});return;}
   if((el=t.closest("[data-fopen]"))){var f=find(S.files,el.dataset.fopen);if(f)openFile(f);return;}
   if((el=t.closest("[data-fdel]"))){var fd=find(S.files,el.dataset.fdel);if(fd)dropFile(fd);return;}
   if(t.closest("[data-nnew]")){addNote();return;}
@@ -3555,18 +3662,23 @@ drawerEl.addEventListener("click",function(e){
     var n=find(S.notes,S.openNote); if(!n) return;
     if(kindClick(t,"note",n.kind,function(k){patchNote(n.id,{kind:k});})) return;
     if((el=t.closest("[data-ncolor]"))){patchNote(n.id,{color:el.dataset.ncolor});return;}
+    if(t.closest('[data-upload="note"]')){pickFile({noteId:n.id});return;}
+    if((el=t.closest("[data-fview]"))){var fv=find(S.files,el.dataset.fview);if(fv)showImage(fv);return;}
+    if((el=t.closest("[data-fopen]"))){var fo=find(S.files,el.dataset.fopen);if(fo)openFile(fo);return;}
+    if((el=t.closest("[data-fdel]"))){var fx=find(S.files,el.dataset.fdel);if(fx)dropFile(fx);return;}
     if(t.closest("[data-ndel]")) removeNote(n.id);
     return;
   }
   var c=S.open?card(S.open):null; if(!c) return;
   if(t.closest("[data-dcheck]")){toggleDone(c.id);return;}
   if((el=t.closest("[data-dprio]"))){patchCard(c.id,{priority:el.dataset.dprio});return;}
+  if((el=t.closest("[data-dcolor]"))){patchCard(c.id,{color:el.dataset.dcolor});return;}
   if(kindClick(t,"task",c.kind,function(k){patchCard(c.id,{kind:k});renderDrawer(true);})) return;
   if((el=t.closest("[data-stlist]"))){statusSheet(el);return;}
   if(t.closest("[data-dics]")){downloadICS(c);return;}
   if((el=t.closest("[data-dsubcheck]"))){toggleDone(el.dataset.dsubcheck);return;}
   if((el=t.closest("[data-dopen]"))){openCard(el.dataset.dopen);return;}
-  if((el=t.closest("[data-upload]"))&&el.dataset.upload==="card"){pickFile(c.id);return;}
+  if((el=t.closest("[data-upload]"))&&el.dataset.upload==="card"){pickFile({cardId:c.id});return;}
   if((el=t.closest("[data-fopen]"))){var f=find(S.files,el.dataset.fopen);if(f)openFile(f);return;}
   if((el=t.closest("[data-fdel]"))){var fd=find(S.files,el.dataset.fdel);if(fd)dropFile(fd);return;}
   if(t.closest("[data-ksend]")){
@@ -3640,7 +3752,8 @@ drawerEl.addEventListener("focusout",function(){setTimeout(function(){renderDraw
 scrimEl.addEventListener("click",function(){closeDrawer();closeSettings();});
 document.addEventListener("keydown",function(e){
   if(e.key!=="Escape") return;
-  if(sheetEl) closeSheet(); else if(sideOpen()) closeSide(); else if(!isWork()&&GridLife.escape()) return;
+  if(lightboxEl) closeLightbox();
+  else if(sheetEl) closeSheet(); else if(sideOpen()) closeSide(); else if(!isWork()&&GridLife.escape()) return;
   else if(settingsOpen()) closeSettings(); else if(S.open||S.openNote) closeDrawer();
 });
 

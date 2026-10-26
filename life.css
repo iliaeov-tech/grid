@@ -15,6 +15,12 @@
 .lt-title{margin:0;font-size:15px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 .lt .icon-btn{width:36px;height:36px}
+/* компьютер: «‹ Октябрь 2026 ›» — одна группа слева, ширину названия задаёт
+   fitNavTitle (по самому длинному варианту), «Сегодня» — справа */
+@media (min-width:641px){
+  .lt-title{flex:none;text-align:center}
+  .lt .lt-today{margin-left:auto}
+}
 .lt .lt-today,.rail-today{border:1px solid var(--line-2);min-height:36px}
 .rail-today{display:none}
 

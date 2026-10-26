@@ -2277,6 +2277,25 @@ function renderGantt(){
    -1 назад. Возвращает функцию «был ли только что свайп», чтобы конец
    свайпа не приняли за нажатие на день. */
 var SWIPE_MIN=50,SWIPE_EDGE=20,SWIPE_MS=160,phoneMQ=window.matchMedia("(max-width:640px)");
+/* На компьютере стрелки и название периода — одна группа «‹ Октябрь 2026 ›».
+   Ширина названия — по самому длинному варианту этого вида (titles() —
+   все варианты), текст по центру: стрелки не прыгают при смене периода.
+   Пока шрифт не загрузился, ширину не запоминаем. На телефоне не трогаем. */
+var navW={};
+function fitNavTitle(h,key,titles){
+  if(!h) return;
+  if(phoneMQ.matches||!key){h.style.minWidth="";return;}
+  var w=navW[key];
+  if(!w){
+    var cs=getComputedStyle(h),ctx=document.createElement("canvas").getContext("2d");
+    ctx.font=cs.fontWeight+" "+cs.fontSize+" "+cs.fontFamily;
+    w=Math.ceil(titles().reduce(function(m,s){return Math.max(m,ctx.measureText(s).width);},0))+2;
+    if(!document.fonts||document.fonts.status==="loaded") navW[key]=w;
+  }
+  h.style.minWidth=w+"px";
+}
+/* даты на год вперёд (и вчера) — по ним собираются все варианты названия */
+function navDates(){var out=[],d=parseISO(todayISO());d.setDate(d.getDate()-1);for(var i=0;i<369;i++){out.push(iso(d));d.setDate(d.getDate()+1);}return out;}
 function attachSwipe(box,target,step){
   var s=null,at=0;
   function reset(el){el.style.transition="transform "+SWIPE_MS+"ms ease-out";el.style.transform="";}
@@ -2342,8 +2361,9 @@ function calTasks(){
 function covering(list,d){return list.filter(function(x){return x.a<=d&&x.b>=d;});}
 /* цвет события — цвет типа задачи, без цвета — нейтральный серый */
 function evTint(c){var k=kindInfo("task",c.kind);return tint(k&&k.color?k.color:"gray");}
-function calTitle(){
-  var v=S.cal.view,c=S.cal.cursor,d=parseISO(c);
+function calTitle(v,c){
+  v=v||S.cal.view; c=c||S.cal.cursor;
+  var d=parseISO(c);
   if(v==="list") return "Все задачи с датами";
   if(v==="day") return dayTitle(c);
   if(v==="week"){var s=weekOf(c);return shortDate(parseISO(s))+" – "+shortDate(parseISO(addDay(s,6)));}
@@ -2449,6 +2469,9 @@ function renderCalendar(){
   mainEl.innerHTML='<div class="wc">'+calBarHTML()+'<div class="wc-scroll"><div class="wc-in">'+
     (v==="month"?monthHTML(list):v==="week"?weekHTML(list):v==="day"?dayHTML(list):listHTML(list))+"</div></div></div>";
   mainEl.dataset.calkey=key;
+  var p=prefs();
+  fitNavTitle($(".wc .lt-title",mainEl),v==="list"?"":"work|"+v+"|"+p.dateFmt+"|"+p.weekStart,function(){
+    return navDates().map(function(d){return calTitle(v,d);});});
   if(same) $(".wc-scroll",mainEl).scrollTop=top; else if(v==="list") listToToday();
 }
 function calStep(n){
@@ -4381,7 +4404,7 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
   drawerHead:drawerHead,X_BTN:X_BTN,CHECK_SVG:CHECK_SVG,closeSide:closeSide,openSettings:openSettings,
   renderSide:renderSide,renderSettings:renderSettings,scrim:scrimEl,
   typeEditor:typeEditor,kindChip:kindChip,orderBetween:orderBetween,byOrder:byOrder,find:find,setMode:setMode,
-  attachSwipe:attachSwipe,icsText:icsText,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,
+  attachSwipe:attachSwipe,fitNavTitle:fitNavTitle,navDates:navDates,icsText:icsText,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,
   push:{url:pushURL,key:pushKey,support:pushSupport,ask:askNotify,subscription:pushSubscription,error:pushError}};
 /* работа без сети и установка на главный экран (только на http/https) */
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){

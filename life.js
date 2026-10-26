@@ -397,11 +397,11 @@ function askScope(title,withOne){
 }
 
 /* ═════════ отрисовка ═════════ */
-function viewTitle(){
-  var c=L.cursor;
-  if(L.view==="list") return "Ближайшие дни";
-  if(L.view==="day") return (relDay(c)?relDay(c)+", ":"")+wd(c)+", "+longDate(c);
-  if(L.view==="week"){
+function viewTitle(v,c){
+  v=v||L.view; c=c||L.cursor;
+  if(v==="list") return "Ближайшие дни";
+  if(v==="day") return (relDay(c)?relDay(c)+", ":"")+wd(c)+", "+longDate(c);
+  if(v==="week"){
     var s=K.parseISO(shownWeek(c)),e=K.parseISO(addDays(shownWeek(c),6));
     return s.getMonth()===e.getMonth()?s.getDate()+"–"+e.getDate()+" "+MONTHS_GEN[e.getMonth()]
       :s.getDate()+" "+K.MONTHS[s.getMonth()]+" – "+e.getDate()+" "+K.MONTHS[e.getMonth()];
@@ -554,6 +554,9 @@ function render(){
   var key=L.view+"|"+(L.view==="list"?"":L.cursor),old=$(".lv-body,.lg-scroll",L.el),top=old?old.scrollTop:0;
   L.el.innerHTML='<div class="lv">'+toolbarHTML()+bodyHTML()+"</div>"+
     '<button class="lfab" data-lfab="1" aria-label="Новая задача">'+ic("plus")+"</button>";
+  var v=L.view;
+  K.fitNavTitle($(".lt-title",L.el),v==="list"?"":"life|"+v+"|"+lp().weekStart,function(){
+    return K.navDates().map(function(d){return viewTitle(v,d);});});
   var sc=$(".lv-body,.lg-scroll",L.el);
   if(sc){
     if(key===L.shownKey) sc.scrollTop=top;

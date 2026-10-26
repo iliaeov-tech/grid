@@ -996,7 +996,11 @@ var $=function(s,r){return (r||document).querySelector(s);};
 var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
 var esc=function(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
-var uid=function(p){return p+"-"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);};
+/* случайная часть — из криптогенератора: по id проекта называется канал «кто онлайн», его не угадать */
+var uid=function(p){
+  var b=crypto.getRandomValues(new Uint8Array(8));
+  return p+"-"+Date.now().toString(36)+Array.from(b,function(x){return (x%36).toString(36);}).join("");
+};
 var clamp=function(n,a,b){return Math.max(a,Math.min(b,n));};
 
 var PRIOS=[{id:"low",label:"Низкий"},{id:"med",label:"Средний"},
@@ -1094,8 +1098,10 @@ var ICON_CHOICES=[["report","Документ"],["learn","Обучение"],["i
 function ic(name){return '<svg viewBox="0 0 24 24" aria-hidden="true">'+(ICONS[name]||ICONS.note)+"</svg>";}
 /* цвет из общей палитры: --kb светлый фон, --ki яркий (иконка, точка), --kt тёмный текст */
 function tint(t){t=find(TINTS,t)?t:"gray";return "--kb:var(--h-"+t+");--ki:var(--k-"+t+");--kt:var(--h-"+t+"-ink)";}
-function prioVar(p){return "var(--p-"+p+")";}
-function prioSoft(p){return "var(--p-"+p+"-soft)";}
+/* приоритет из данных (база, резервная копия) — только из списка: значение попадает в style */
+function prioId(p){return find(PRIOS,p)?p:"med";}
+function prioVar(p){return "var(--p-"+prioId(p)+")";}
+function prioSoft(p){return "var(--p-"+prioId(p)+"-soft)";}
 function labelOf(list,id,dflt){for(var i=0;i<list.length;i++){if(list[i].id===id)return list[i].label;}return dflt||"";}
 
 var MONTHS=["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
@@ -2578,6 +2584,7 @@ function renderMain(){
   var live=liveProjects(),cur=project();
   /* пока проекты не загрузились, сохранённый выбор не трогаем */
   if(S.projects.length&&(!cur||cur.deletedAt)) S.project=live.length?live[0].id:null;
+  presenceFor(S.project);
   renderRail(); renderTabs();
   if(S.mode==="boot") return;
   if(!live.length){
@@ -3773,6 +3780,46 @@ function checkPush(){
   pushKey().then(function(){S.pushKey="ok";},function(){S.pushKey="off";}).then(function(){renderSettings();});
 }
 
+/* ═════════ доступ к Grid — видит только владелец Grid ═════════ */
+/* Войти в Grid Work могут приглашённые в любой проект и почты из списка
+   grid_access. Список держит база: читать и менять его может только admin. */
+function loadAccess(){
+  if(!S.admin||!S.sb) return;
+  S.sb.from("grid_access").select("email,admin,created_at").order("created_at").then(function(r){
+    if(r.error){flash("Список доступа не загрузился: "+r.error.message);return;}
+    S.access=r.data||[]; renderSettings();
+  });
+}
+function accessHTML(){
+  if(!S.admin||S.store.kind!=="supabase") return "";
+  var list=S.access;
+  return groupHead("Grid","Видите только вы — владелец Grid.")+setSection("access","Доступ к Grid",
+    "<p>Войти в Grid Work могут почты, приглашённые в любой проект, и почты из этого списка — например, друзья, "+
+      "у которых пока нет проекта: войдя, они смогут создать свой.</p>"+
+    (!list?'<div class="drop-hint">Загружаем…</div>':!list.length?'<div class="drop-hint">Список пуст.</div>':"<div>"+list.map(function(a){
+      return '<div class="mrow"><span class="lbl"><b>'+esc(a.email)+"</b><small>"+(a.admin?"владелец Grid":"в списке с "+esc(fmtWhen(Date.parse(a.created_at))))+
+        "</small></span>"+(a.admin?"":'<button class="x" data-accdel="'+esc(a.email)+'" aria-label="Убрать из списка" title="Убрать из списка">'+X_BTN+"</button>")+"</div>";
+    }).join("")+"</div>")+
+    '<div class="invite"><input class="in" type="email" data-accin="1" placeholder="Почта" aria-label="Почта для доступа" autocomplete="off">'+
+      '<button class="btn" data-accadd="1">Добавить</button></div>'+
+    '<p class="small">Если почты нет ни в одном проекте, без этого списка войти с ней нельзя. Из проектов человека убирают в их настройках.</p>');
+}
+function addAccess(){
+  var i=$("[data-accin]",settingsEl),v=(i?i.value:"").trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){flash("Проверьте почту");return;}
+  S.sb.from("grid_access").insert({email:v}).then(function(r){
+    if(r.error){flash(r.error.code==="23505"?"Эта почта уже в списке":"Не удалось добавить: "+r.error.message);return;}
+    flash("Почта "+v+" добавлена в список доступа"); loadAccess();
+  });
+}
+function removeAccess(email){
+  if(!confirm("Убрать "+email+" из списка доступа?")) return;
+  S.sb.from("grid_access").delete().eq("email",email).then(function(r){
+    if(r.error){flash("Не удалось убрать: "+r.error.message);return;}
+    flash("Почта убрана из списка доступа"); loadAccess();
+  });
+}
+
 /* сверху — личное, ниже — проект (меняет владелец, действует для всех), данные и о программе */
 function settingsHTML(){
   var p=project()&&!project().deletedAt?project():null;
@@ -3780,6 +3827,7 @@ function settingsHTML(){
     groupHead("Лично для вас","Видите и меняете только вы.")+profileHTML()+displayHTML()+notifyHTML()+calendarsHTML()+
     (p?groupHead("Проект «"+p.name+"»",isOwner()?"Вы владелец: изменения действуют для всей команды."
         :"Меняет владелец проекта, действует для всей команды.")+projectHTML()+teamHTML()+typesHTML():"")+
+    accessHTML()+
     groupHead("Данные","Копия, место для файлов и корзина.")+backupHTML()+storageHTML()+trashHTML()+
     aboutHTML()+"</div>";
 }
@@ -3803,7 +3851,7 @@ function openSettings(section){
   var s=typeof section==="string"&&$('[data-set="'+section+'"]',settingsEl);
   if(s) s.scrollIntoView({block:"start"});
   var b=$("[data-dclose]",settingsEl); if(b) b.focus({preventScroll:true});
-  if(isWork()){fetchStorage();checkPush();}
+  if(isWork()){fetchStorage();checkPush();loadAccess();}
 }
 function closeSettings(){
   if(!settingsOpen()) return;
@@ -3842,6 +3890,8 @@ settingsEl.addEventListener("click",function(e){
   if(t.closest("[data-pphotodel]")){patchProfile({avatar:""});return;}
   if(t.closest("[data-signout]")){signOut();return;}
   if(t.closest("[data-pushtest]")){sendTestPush();return;}
+  if(t.closest("[data-accadd]")){addAccess();return;}
+  if((b=t.closest("[data-accdel]"))){removeAccess(b.dataset.accdel);return;}
   if(t.closest("[data-invite]")){sendInvite();return;}
   if((b=t.closest("[data-mdel]"))){removeMember(b.dataset.mdel);renderSettings(true);return;}
   if(t.closest("[data-copylink]")){copyText(location.origin+location.pathname,"Ссылка на Grid скопирована");return;}
@@ -3872,6 +3922,7 @@ settingsEl.addEventListener("click",function(e){
 settingsEl.addEventListener("keydown",function(e){
   if(e.key!=="Enter") return;
   if(e.target.matches("[data-inv]")){e.preventDefault();sendInvite();}
+  else if(e.target.matches("[data-accin]")){e.preventDefault();addAccess();}
   else if(e.target.matches("[data-pname],[data-projname]")) e.target.blur();
 });
 settingsEl.addEventListener("change",function(e){
@@ -4210,6 +4261,9 @@ function pushPresence(){
   try{S.chan.track({key:MYKEY,who:m?nameOf(m).slice(0,40):"Гость",
     tint:m?safeColor(m.color):"#7F8C8D"});}catch(e){}
 }
+/* Правки коллег приходят через общий канал: база отдаёт каждому только то,
+   что ему видно по правилам RLS. «Кто онлайн» — отдельный канал у каждого
+   проекта: название из id проекта знают только его участники. */
 function wireRealtime(sb,store){
   var ch=sb.channel("grid-board");
   COLLS.forEach(function(coll){
@@ -4218,15 +4272,27 @@ function wireRealtime(sb,store){
       if(coll==="project_members") COLLS.forEach(function(c){store.refetch(c);}); else store.refetch(coll);
     });
   });
+  ch.subscribe();
+  presenceFor(S.project);
+  setInterval(pushPresence,45000);
+}
+/* presCh — канал «кто онлайн» текущего проекта; S.chan — он же, когда подписка подтверждена */
+var presFor,presCh=null;
+function presenceFor(pid){
+  if(!S.sb||!S.store||S.store.kind!=="supabase"||presFor===(pid||null)) return;
+  presFor=pid||null;
+  if(presCh){S.sb.removeChannel(presCh);presCh=null;S.chan=null;}
+  S.peers=[]; renderPresence();
+  if(!pid) return;
+  var ch=presCh=S.sb.channel("grid-presence-"+pid);
   ch.on("presence",{event:"sync"},function(){
     var st=ch.presenceState(),list=[];
     Object.keys(st).forEach(function(k){(st[k]||[]).forEach(function(p){
       list.push({kind:"viewer",isMe:p.key===MYKEY,
         presence:{who:typeof p.who==="string"?p.who:"Гость",tint:p.tint}});});});
-    S.peers=list; renderPresence();
+    if(presFor===pid){S.peers=list;renderPresence();}
   });
-  ch.subscribe(function(status){if(status==="SUBSCRIBED"){S.chan=ch;pushPresence();}});
-  setInterval(pushPresence,45000);
+  ch.subscribe(function(status){if(status==="SUBSCRIBED"&&presFor===pid){S.chan=ch;pushPresence();}});
 }
 
 /* ═════════ запуск ═════════ */
@@ -4305,7 +4371,8 @@ function signInScreen(sb,msg,kind){
       '<input id="gm" type="email" placeholder="you@company.com" autocomplete="email"></div>'+
       '<button class="btn" id="gmail">Прислать ссылку для входа</button>';
   }else body+='<button class="btn" id="goauth">Войти через '+pname+"</button>";
-  body+='<button class="btn ghost" id="gdemo">Посмотреть демо без входа</button>';
+  body+='<button class="btn ghost" id="gdemo">Посмотреть демо без входа</button>'+
+    '<p class="small">Вход — по приглашению: подойдёт почта, которую пригласили в проект.</p>';
   showGate(body,function(el){
     $("#gdemo",el).addEventListener("click",demoMode);
     var o=$("#goauth",el);
@@ -4335,9 +4402,31 @@ function start(sb,user){
   hideGate();
   sb.rpc("grid_after_login").then(function(r){
     if(r&&r.error) flash("База не приняла вход: "+r.error.message+". Возможно, схему нужно выполнить заново — см. README.");
+    var a=r&&r.data;
+    if(a&&a.allowed===false){deny(sb);return;}
+    S.admin=!!(a&&a.admin);
     var st=supaStore(sb);
     attach(st); wireRealtime(sb,st);
   });
+}
+/* Почта не приглашена ни в один проект и нет в списке доступа: выходим
+   (страница перезагрузится) и на экране входа объясняем, что делать. */
+var DENIED="grid.denied";
+function deny(sb){
+  try{sessionStorage.setItem(DENIED,S.email);}catch(e){}
+  sb.auth.signOut();
+}
+function deniedMessage(){
+  var m="";
+  try{m=sessionStorage.getItem(DENIED)||"";sessionStorage.removeItem(DENIED);}catch(e){}
+  return m?"Почта "+m+" не приглашена в Grid Work. Попросите владельца проекта пригласить её, а потом войдите снова. Grid Life работает и без входа.":"";
+}
+/* отказ Supabase при входе (например, проверка почты перед регистрацией) приходит в адресе страницы */
+function authRedirectError(){
+  var p=new URLSearchParams((location.hash||"").replace(/^#/,"")+"&"+(location.search||"").replace(/^\?/,"")),d=p.get("error_description");
+  if(!d) return "";
+  history.replaceState(null,"",location.pathname);
+  return "Не удалось войти: "+d;
 }
 function boot(){
   if(!window.supabase||!window.supabase.createClient){
@@ -4347,7 +4436,7 @@ function boot(){
       function(el){$("#gdemo",el).addEventListener("click",demoMode);});
     return;
   }
-  var sb;
+  var sb,refused=authRedirectError()||deniedMessage();
   try{sb=window.supabase.createClient(CFG.url,CFG.anonKey);}
   catch(e){setupScreen("Не удалось подключиться: "+((e&&e.message)||"проверьте адрес и ключ."));return;}
   S.sb=sb;
@@ -4356,8 +4445,8 @@ function boot(){
     else if(ev==="SIGNED_OUT") location.reload();
   });
   sb.auth.getSession().then(function(r){
-    if(r&&r.data&&r.data.session) start(sb,r.data.session.user); else signInScreen(sb);
-  }).catch(function(){signInScreen(sb);});
+    if(r&&r.data&&r.data.session) start(sb,r.data.session.user); else signInScreen(sb,refused);
+  }).catch(function(){signInScreen(sb,refused);});
 }
 /* Рабочая часть запускается при первом входе в Grid Work: библиотеку
    Supabase грузим только тогда, и Grid Life не зависит ни от сети, ни от входа. */

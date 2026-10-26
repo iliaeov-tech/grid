@@ -1272,7 +1272,8 @@ function remindLabel(m){
 function remindsOf(t){
   var p=lp();
   if(p.remindMode==="off") return [];
-  if(Array.isArray(t.remind)) return t.remind;
+  /* только числа: список мог прийти из чужой резервной копии, а значения попадают в разметку */
+  if(Array.isArray(t.remind)) return t.remind.filter(function(m){return typeof m==="number"&&m>=0&&m<=REMIND_MAX;});
   return p.remindMode==="all"||p.remindMode==="important"&&(t.priority==="high"||t.priority==="urgent")?[+p.remindDefault||0]:[];
 }
 function startOf(it){

@@ -1,9 +1,9 @@
 // Grid — push-уведомления Grid Work и напоминания Grid Life (Web Push).
 //
-// Раз в минуту функцию вызывает задание pg_cron (тело {"run": true}): она
+// Раз в минуту функцию вызывает задание pg_cron (тело {"run": true} и
+// заголовок x-grid-cron с секретом из Vault — его знает только задание): она
 // забирает из базы то, что пора отправить (grid_push_take, grid_life_take),
-// и рассылает. Запрос без пользы для того, кто его прислал: в ответе только
-// число отправленных, а каждое уведомление уходит один раз.
+// и рассылает.
 //
 // Из приложения:
 //   GET                                  — открытый ключ VAPID для подписки
@@ -11,7 +11,9 @@
 //   {life: "save", token, sub, items}     — устройство Grid Life заменяет свои напоминания
 //   {life: "test" | "off", token}         — пробное напоминание / забыть устройство
 // Grid Life работает без аккаунта: устройство узнаётся по случайному ключу,
-// в базе — только его отпечаток. Поэтому функция развёрнута без проверки JWT.
+// в базе — только его отпечаток. Поэтому функция развёрнута без проверки JWT,
+// а частоту запросов ограничивает сама (grid_rate_hit) — с одного адреса,
+// от одного устройства и человека.
 //
 // Секреты (Edge Functions → Secrets): VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
 // VAPID_SUBJECT (mailto: адрес для связи с push-сервисами).
@@ -109,9 +111,19 @@ async function sha256(s: string): Promise<string> {
   return Array.from(d, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function life(body: Row): Promise<Response> {
+/* лимит частоты: не больше limit запросов за seconds секунд на ключ bucket */
+const allowed = (bucket: string, limit: number, seconds: number): Promise<boolean> =>
+  rpc("grid_rate_hit", { p_bucket: bucket, p_limit: limit, p_seconds: seconds });
+const tooOften = () => json({ error: "Слишком часто — попробуйте через несколько минут" }, 429);
+/* адрес отправителя; его можно подделать, поэтому есть и лимиты по устройству, и общий потолок в базе */
+const ipOf = (req: Request) => (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "?";
+const LIFE_LIMITS: Row = { save: 60, test: 5, off: 10 };
+
+async function life(body: Row, req: Request): Promise<Response> {
   if (typeof body.token !== "string" || !/^[A-Za-z0-9_-]{32,64}$/.test(body.token)) return json({ error: "token" }, 400);
+  if (!LIFE_LIMITS[body.life]) return json({ error: "action" }, 400);
   const hash = await sha256(body.token);
+  if (!(await allowed(`life-ip:${ipOf(req)}`, 200, 600)) || !(await allowed(`life-${body.life}:${hash}`, LIFE_LIMITS[body.life], 600))) return tooOften();
   if (body.life === "off") {
     await rest(`life_devices?token_hash=eq.${hash}`, { method: "DELETE" });
     return json({ ok: true });
@@ -121,13 +133,18 @@ async function life(body: Row): Promise<Response> {
     if (!d) return json({ error: "device" }, 404);
     return json({ sent: await send([{ to: d, ttl: 600, urgency: "high", msg: { life: 1, rid: "test" } }]) });
   }
-  if (body.life !== "save") return json({ error: "action" }, 400);
   const sub = body.sub ?? {}, to = { endpoint: String(sub.endpoint ?? ""), p256dh: String(sub.keys?.p256dh ?? ""), auth: String(sub.keys?.auth ?? "") };
   if (!validTarget(to)) return json({ error: "subscription" }, 400);
   const items = (Array.isArray(body.items) ? body.items : []).slice(0, 300)
     .filter((x: Row) => typeof x?.rid === "string" && /^[A-Za-z0-9_-]{8,40}$/.test(x.rid) && !isNaN(Date.parse(x.at)))
     .map((x: Row) => ({ rid: x.rid, at: new Date(x.at).toISOString() }));
-  await rpc("grid_life_save", { p_hash: hash, p_endpoint: to.endpoint, p_key: to.p256dh, p_auth: to.auth, p_items: items });
+  try {
+    await rpc("grid_life_save", { p_hash: hash, p_endpoint: to.endpoint, p_key: to.p256dh, p_auth: to.auth, p_items: items });
+  } catch (e) {
+    if (String((e as Error).message).includes("too many new devices"))
+      return json({ error: "Сейчас подключается слишком много новых устройств — попробуйте позже" }, 429);
+    throw e;
+  }
   return json({ ok: true, saved: items.length });
 }
 
@@ -137,11 +154,15 @@ Deno.serve(async (req) => {
   if (req.method === "GET") return json({ key: Deno.env.get("VAPID_PUBLIC_KEY") });
   try {
     const body: Row = await req.json().catch(() => ({}));
-    if (body.run) return json({ sent: await run() });
-    if (body.life) return await life(body);
+    if (body.run) {
+      if (!(await rpc("grid_cron_ok", { p_secret: req.headers.get("x-grid-cron") ?? "" }))) return json({ error: "Нет доступа" }, 403);
+      return json({ sent: await run() });
+    }
+    if (body.life) return await life(body, req);
     if (body.test) {
       const id = await user(req);
       if (!id) return json({ error: "Нужно войти в Grid Work" }, 401);
+      if (!(await allowed(`work-test:${id}`, 5, 600))) return tooOften();
       const subs: Target[] = await rest(`push_subscriptions?select=endpoint,p256dh,auth&user_id=eq.${id}`);
       const sent = await send(subs.map((to) => ({
         to, ttl: 600, urgency: "high" as const,

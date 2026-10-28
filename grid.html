@@ -738,6 +738,8 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .set .ab-h{margin:6px 0 -4px;font-size:13px;font-weight:600;color:var(--ink)}
 .set .ab-lic{margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
 .set .ab-lic a{color:var(--accent)}
+.set .ab-tg{align-items:center;column-gap:12px}
+.set .ab-tg span{font-size:12.5px;color:var(--ink-3)}
 .choice{display:flex;flex-direction:column;gap:6px}
 .choice label{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-radius:var(--r-m);
   border:1px solid var(--line-2);cursor:pointer}
@@ -3759,30 +3761,23 @@ function restoreItem(coll,id){
 }
 /* версия — дата, когда страницу последний раз обновили на сайте */
 function versionDate(){var d=new Date(document.lastModified);return isNaN(d)?"":d.getDate()+" "+MONTHS[d.getMonth()]+" "+d.getFullYear();}
-function feedbackTo(){var to=String((window.GRID_CONFIG||{}).feedback||"").trim();return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)?to:"";}
-function feedbackInfo(){
-  return "Grid, версия от "+versionDate()+"\nРежим: "+(S.store.kind==="supabase"?"база Supabase":COLLAB?"демо":"на этом устройстве")+
-    "\nЭкран: "+screen.width+"×"+screen.height+"\nБраузер: "+navigator.userAgent;
-}
+/* Telegram для «Сотрудничество и отзывы»: обычная ссылка — пока её не нажали, Grid никуда не обращается */
+function telegramName(){var n=String((window.GRID_CONFIG||{}).telegram||"").trim().replace(/^@/,"");return /^\w{5,32}$/.test(n)?n:"";}
 /* шрифты лежат на сайте вместе с текстом лицензии (fonts/…/OFL.txt) */
 var FONT_LICENSES=[["Golos Text","golos-text"],["Unbounded","unbounded"],["JetBrains Mono","jetbrains-mono"]];
-function aboutHTML(){
-  var to=feedbackTo(),label="Сообщить о проблеме или предложить идею";
-  return setSection("about","О Grid",
-    "<p>"+(COLLAB?"Grid Work — доски для команды, Grid Life — личный календарь на этом устройстве."
+/* «О Grid» — одно и то же в настройках Grid Work и Grid Life */
+function aboutBody(){
+  var tg=telegramName();
+  return "<p>"+(COLLAB?"Grid Work — доски для команды, Grid Life — личный календарь на этом устройстве."
       :"Grid Work — доски задач, Grid Life — личный календарь. Всё работает на этом устройстве.")+"</p>"+
     '<p class="small">Версия от '+esc(versionDate())+"</p>"+
-    '<div class="row">'+(to
-      ?'<a class="btn ghost" href="mailto:'+esc(to)+"?subject="+encodeURIComponent("Grid: проблема или идея")+
-        "&body="+encodeURIComponent("Что случилось или чего не хватает:\n\n\n—\n"+feedbackInfo())+'">'+label+"</a>"
-      :'<button class="btn ghost" data-feedback="1">'+label+"</button>")+"</div>"+
-    (to?'<p class="small">Откроется ваша почтовая программа — с письмом, в котором уже есть версия Grid и сведения о браузере.</p>'
-      :'<p class="small">Адрес для писем пока не указан: кнопка скопирует сведения о версии, чтобы их можно было переслать.</p>')+
+    (tg?'<div class="row ab-tg"><a class="btn ghost" href="https://t.me/'+tg+'" target="_blank" rel="noopener noreferrer">'+
+        'Сотрудничество и отзывы</a><span>Telegram: @'+tg+"</span></div>":"")+
     (COLLAB?"":'<h4 class="ab-h">Конфиденциальность</h4>'+
       "<p>Grid не собирает и не передаёт ваши данные: задачи, заметки, файлы и настройки хранятся только в браузере "+
         "этого устройства. Сайт размещён на GitHub Pages — как любой хостинг, GitHub видит обычные сведения о посещении "+
-        "(адрес и браузер). Если вы напишете нам через «Сообщить о проблеме», мы увидим ваш адрес почты и используем "+
-        "его только для ответа.</p>"+
+        "(адрес и браузер). Если вы напишете нам в Telegram, мы увидим ваш профиль Telegram и используем его только "+
+        "для ответа.</p>"+
       '<h4 class="ab-h">Условия</h4>'+
       "<p>Grid бесплатный и предоставляется как есть, без гарантий. За сохранность данных отвечаете вы: они хранятся "+
         "только на вашем устройстве, поэтому сохраняйте резервные копии.</p>")+
@@ -3790,8 +3785,9 @@ function aboutHTML(){
     '<ul class="ab-lic">'+FONT_LICENSES.map(function(f){
       return "<li>Шрифт "+f[0]+' — SIL Open Font License 1.1, <a href="fonts/'+f[1]+'/OFL.txt" target="_blank" rel="noopener">текст лицензии</a></li>';
     }).join("")+"<li>Значки нарисованы для Grid. "+(COLLAB?"Для совместной работы загружается библиотека supabase-js (лицензия MIT).":
-      "Сторонних библиотек сайт не загружает.")+"</li></ul>");
+      "Сторонних библиотек сайт не загружает.")+"</li></ul>";
 }
+function aboutHTML(){return setSection("about","О Grid",aboutBody());}
 function myFeed(){return S.feeds.filter(function(f){return f.userId===S.me;})[0]||null;}
 function feedURL(f){return CFG.url.replace(/\/+$/,"")+"/functions/v1/grid-calendar?token="+f.id;}
 function newToken(){
@@ -4185,7 +4181,6 @@ settingsEl.addEventListener("click",function(e){
   if(t.closest("[data-bkimport]")){pickBackup();return;}
   if(t.closest("[data-reset]")){resetLocal();return;}
   if(t.closest("[data-persist]")){persistAsked=false;askPersist();return;}
-  if(t.closest("[data-feedback]")){copyText(feedbackInfo(),"Сведения о версии скопированы — вставьте их в письмо");return;}
   if((b=t.closest("[data-trestore]"))){var r=b.dataset.trestore.split(":");restoreItem(r[0],r.slice(1).join(":"));return;}
   if((b=t.closest("[data-tpurge]"))){
     var p=b.dataset.tpurge.split(":"),pid=p.slice(1).join(":");
@@ -4824,7 +4819,7 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
   renderSide:renderSide,renderSettings:renderSettings,scrim:scrimEl,
   typeEditor:typeEditor,kindChip:kindChip,orderBetween:orderBetween,byOrder:byOrder,find:find,setMode:setMode,
   attachSwipe:attachSwipe,fitNavTitle:fitNavTitle,navDates:navDates,icsText:icsText,
-  collab:COLLAB,systemNotifyHTML:systemNotifyHTML,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,
+  collab:COLLAB,systemNotifyHTML:systemNotifyHTML,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,aboutBody:aboutBody,
   push:{url:pushURL,key:pushKey,support:pushSupport,ask:askNotify,subscription:pushSubscription,error:pushError}};
 /* работа без сети и установка на главный экран (только на http/https) */
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){

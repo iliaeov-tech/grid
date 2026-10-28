@@ -1558,6 +1558,7 @@ function settingsHTML(){
       "<p>Grid можно установить как приложение: он откроется с главного экрана и без интернета.</p>"+
       (installEvt?'<div class="row"><button class="btn" data-linstall="1">Установить</button></div>'
         :'<p class="small">iPhone: Safari → «Поделиться» → «На экран Домой». Android и компьютер: меню браузера → «Установить приложение».</p>'))+
+    sec("about","О Grid",K.aboutBody())+
     "</div>";
 }
 

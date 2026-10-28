@@ -183,9 +183,14 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .icon-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;
   stroke-linecap:round;stroke-linejoin:round}
 
-.notice{display:flex;align-items:center;gap:9px;padding:7px 16px;font-size:12.5px;
-  background:var(--p-med-soft);color:var(--warn);border-bottom:1px solid var(--line)}
+/* плашка над доской: пример при первом запуске или напоминание о резервной копии */
+.notice{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:9px 16px;font-size:12.5px;line-height:1.45;
+  background:var(--accent-soft);color:var(--ink);border-bottom:1px solid var(--line)}
 .notice b{font-weight:600}
+.notice>span:first-child{flex:1 1 320px;min-width:0}
+.notice .row{display:flex;gap:8px;flex-wrap:wrap}
+.notice .btn{padding:6px 12px;font-size:12.5px}
+.notice .btn.ghost{border:1px solid var(--line-2);background:var(--surface)}
 
 /* ───────────────── вкладки ───────────────── */
 .tabs{display:flex;align-items:center;gap:2px;padding:0 16px;background:var(--surface);
@@ -598,6 +603,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 
 .talk{display:flex;flex-direction:column;gap:10px}
 .msg{display:flex;gap:9px}
+.msg.plain{padding-left:2px}
 .msg .body{flex:1;min-width:0}
 .msg .who{display:flex;align-items:baseline;gap:7px;margin-bottom:2px}
 .msg .who b{font-size:12.5px;font-weight:600}
@@ -789,6 +795,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
   border:1px solid var(--line-2);text-decoration:none}
 .cal-add .btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.9;
   stroke-linecap:round;stroke-linejoin:round}
+.cal-add .cal-note{flex-basis:100%;margin:2px 0 0;font-size:11.5px;color:var(--ink-3);line-height:1.45}
 /* выбор цвета и иконки */
 .tints{display:flex;flex-wrap:wrap;gap:4px}
 .tint{width:27px;height:27px;border-radius:50%;border:2px solid transparent;display:grid;place-items:center}
@@ -1144,7 +1151,13 @@ function fmtWhen(ts){
 }
 
 /* ═════════ состояние ═════════ */
-/* me — id профиля того, кто вошёл (в демо — выбранного примера) */
+/* Совместная работа через сервер (grid.config.js → collab). Пока она
+   выключена, Grid Work живёт только на этом устройстве (IndexedDB): нет
+   входа, ролей, приглашений, push и подписки на календари, и сайт не
+   обращается никуда, кроме своих файлов. Код совместной работы остаётся
+   для следующего этапа. */
+var COLLAB=!!(window.GRID_CONFIG&&window.GRID_CONFIG.collab);
+/* me — id профиля того, кто вошёл; без сервера — хозяина этого устройства */
 var S={store:null,sb:null,chan:null,mode:"boot",started:false,
   projects:[],project_members:[],profiles:[],columns:[],cards:[],comments:[],files:[],notes:[],statuses:[],kinds:[],feeds:[],
   project:null,tab:"board",me:null,email:"",open:null,openNote:null,peers:[],
@@ -1167,7 +1180,7 @@ function me(){return person(S.me);}
    они одинаковы на всех устройствах человека */
 /* push: какие события присылать, тихие часы и пояс (по нему сервер считает 9:00 и тихие часы) */
 var PREFS={view:"board",hideDone:false,density:"normal",weekStart:1,dateFmt:"short",
-  pushDue:true,pushAssigned:true,pushComment:true,quiet:true,quietFrom:"22:00",quietTo:"08:00",tz:""};
+  pushDue:true,pushAssigned:true,pushComment:true,quiet:true,quietFrom:"22:00",quietTo:"08:00",tz:"",backupEvery:"week"};
 function prefs(){var s=(me()||{}).settings;return Object.assign({},PREFS,s&&typeof s==="object"?s:{});}
 /* вид и «скрывать выполненные» действуют с открытия Grid Work */
 function applyPrefs(){
@@ -1206,14 +1219,18 @@ var ROLES=[{id:"owner",label:"Владелец",note:"всё, включая у�
            {id:"editor",label:"Редактор",note:"задачи, колонки, заметки и файлы"},
            {id:"viewer",label:"Наблюдатель",note:"смотрит и комментирует"}];
 function membersOf(pid){pid=pid||S.project;return S.project_members.filter(function(m){return m.projectId===pid;});}
+/* без сервера на устройстве один хозяин — ему можно всё */
 function roleOf(pid,who){
+  if(!COLLAB) return "owner";
   var m=membersOf(pid).filter(function(x){return x.userId&&x.userId===(who||S.me);})[0];
   return m?m.role:"";
 }
 function canEdit(pid){var r=roleOf(pid);return r==="owner"||r==="editor";}
 function isOwner(pid){return roleOf(pid)==="owner";}
-/* ответственным можно назначить только вошедшего участника проекта */
+/* ответственным можно назначить вошедшего участника проекта; без сервера —
+   любого из списка «Участники» (он общий для всех проектов) */
 function people(pid){
+  if(!COLLAB) return S.profiles.slice().sort(function(a,b){return nameOf(a).localeCompare(nameOf(b),"ru");});
   return membersOf(pid).filter(function(m){return m.userId;}).map(function(m){
     return person(m.userId)||{id:m.userId,name:"",email:m.email,color:""};
   }).sort(function(a,b){return nameOf(a).localeCompare(nameOf(b),"ru");});
@@ -1376,36 +1393,113 @@ function supaStore(sb){
     del:function(coll,id){return sb.from(coll).delete().eq("id",id).then(done(Object.keys(cascadeOf(coll))));}
   };
 }
-/* демо-режим: данные в localStorage браузера */
+/* ═════════ хранилище на этом устройстве ═════════ */
+/* Grid Work без сервера: те же коллекции, что в базе, — в IndexedDB этого
+   браузера, как в Grid Life. В памяти копия, каждая правка сразу пишется
+   на диск. Файлы хранятся как есть (Blob). meta — служебное: кто хозяин
+   устройства (me), показан ли пример, когда сохраняли копию.
+   При первом запуске сюда переезжают данные прежнего демо-режима из
+   localStorage, а если их нет — кладётся пример. */
+var WORK_DB="grid-work",OLD_KEY="grid.board.v4";
+function idbDone(r){return new Promise(function(res,rej){r.onsuccess=function(){res(r.result);};r.onerror=function(){rej(r.error);};});}
+function openWorkDB(){
+  if(!window.indexedDB) return Promise.reject(new Error("браузер не поддерживает хранение данных"));
+  var r=indexedDB.open(WORK_DB,1);
+  r.onupgradeneeded=function(){
+    var d=r.result;
+    COLLS.forEach(function(c){d.createObjectStore(c,{keyPath:"id"});});
+    d.createObjectStore("meta",{keyPath:"key"});
+  };
+  return idbDone(r);
+}
+function dataURLBlob(u){
+  var m=/^data:([^;,]*)(;base64)?,(.*)$/.exec(u||""); if(!m) return null;
+  var bin=m[2]?atob(m[3]):decodeURIComponent(m[3]),a=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i);
+  return new Blob([a],{type:m[1]||"application/octet-stream"});
+}
+/* постоянное хранение просим при первой записи: без него браузер может
+   очистить данные, когда на устройстве кончается место */
+var persistAsked=false;
+function askPersist(){
+  if(persistAsked||!navigator.storage||!navigator.storage.persist) return;
+  persistAsked=true;
+  navigator.storage.persist().then(function(p){S.persisted=p;renderSettings();},function(){});
+}
 function localStore(){
-  var KEY="grid.board.v4",data=null;
-  try{data=JSON.parse(localStorage.getItem(KEY));}catch(e){}
-  if(!data||!data.projects) data=starter();
-  COLLS.forEach(function(c){if(!data[c])data[c]=[];});
-  var subs={};
-  function save(){
-    try{localStorage.setItem(KEY,JSON.stringify(data));}
-    catch(e){flash("В демо-режиме кончилось место в браузере. Удалите крупные файлы.");}
+  var db=null,data={},meta={},subs={};
+  function tx(stores,fn){
+    return new Promise(function(res,rej){
+      var t=db.transaction(stores,"readwrite"); fn(t);
+      t.oncomplete=function(){res();}; t.onerror=t.onabort=function(){rej(t.error);};
+    });
+  }
+  function saved(p){
+    askPersist();
+    return p.catch(function(e){flash("Не удалось сохранить на устройстве"+(e&&e.message?": "+e.message:""));throw e;});
   }
   function emit(c){(subs[c]||[]).forEach(function(f){f(data[c].slice());});}
   function idx(c,id){for(var i=0;i<data[c].length;i++){if(data[c][i].id===id)return i;}return -1;}
+  function writeAll(d,m){
+    return tx(COLLS.concat(["meta"]),function(t){
+      COLLS.forEach(function(c){var os=t.objectStore(c);os.clear();(d[c]||[]).forEach(function(r){os.put(r);});});
+      Object.keys(m).forEach(function(k){t.objectStore("meta").put({key:k,value:m[k]});});
+    });
+  }
+  /* данные прежнего демо-режима: файлы были текстом (data:URL) — делаем из них Blob */
+  function fromOld(old){
+    (old.files||[]).forEach(function(f){if(f.data){f.blob=dataURLBlob(f.data);delete f.data;}});
+    var me=null; try{me=localStorage.getItem("grid.demo.me");}catch(e){}
+    if(!find(old.profiles||[],me)) me=(old.profiles||[])[0]?old.profiles[0].id:null;
+    return {data:old,me:me};
+  }
+  var ready=openWorkDB().then(function(d){
+    db=d;
+    return Promise.all(COLLS.concat(["meta"]).map(function(c){return idbDone(db.transaction(c).objectStore(c).getAll());}));
+  }).then(function(r){
+    COLLS.forEach(function(c,i){data[c]=r[i];});
+    r[COLLS.length].forEach(function(x){meta[x.key]=x.value;});
+    if(meta.started) return;
+    var old=null; try{old=JSON.parse(localStorage.getItem(OLD_KEY));}catch(e){}
+    var first=old&&old.projects?fromOld(old):{data:starter(),me:"m-1",sample:true};
+    COLLS.forEach(function(c){data[c]=first.data[c]||[];});
+    Object.assign(meta,{started:Date.now(),me:first.me,sample:!!first.sample});
+    return writeAll(data,meta).then(function(){
+      try{localStorage.removeItem(OLD_KEY);localStorage.removeItem("grid.demo.me");}catch(e){}
+    });
+  }).then(function(){return meta;});
   return {
-    kind:"local",refetch:function(){},
+    kind:"local",refetch:function(){},ready:ready,meta:meta,
+    setMeta:function(k,v){meta[k]=v;return saved(tx(["meta"],function(t){t.objectStore("meta").put({key:k,value:v});}));},
     subscribe:function(c,cb){(subs[c]=subs[c]||[]).push(cb);
-      setTimeout(function(){cb(data[c].slice());},0);
+      ready.then(function(){cb(data[c].slice());});
       return function(){subs[c]=subs[c].filter(function(f){return f!==cb;});};},
     set:function(c,id,body){var i=idx(c,id),rec=Object.assign({},body,{id:id});
-      if(i<0)data[c].push(rec);else data[c][i]=rec;save();emit(c);return Promise.resolve();},
+      if(i<0)data[c].push(rec);else data[c][i]=rec;emit(c);
+      return saved(tx([c],function(t){t.objectStore(c).put(rec);}));},
     update:function(c,id,patch){var i=idx(c,id);if(i<0)return Promise.resolve();
-      data[c][i]=Object.assign({},data[c][i],patch);save();emit(c);return Promise.resolve();},
+      var rec=data[c][i]=Object.assign({},data[c][i],patch);emit(c);
+      return saved(tx([c],function(t){t.objectStore(c).put(rec);}));},
     del:function(c,id){
-      var hit={};
+      var gone={};
       (function drop(c,id){
-        hit[c]=1; data[c]=data[c].filter(function(d){return d.id!==id;});
+        (gone[c]=gone[c]||[]).push(id); data[c]=data[c].filter(function(d){return d.id!==id;});
         (CASCADE[c]||[]).forEach(function(r){
           data[r[0]].filter(function(d){return d[r[1]]===id;}).forEach(function(d){drop(r[0],d.id);});});
       })(c,id);
-      save(); Object.keys(hit).forEach(emit); return Promise.resolve();}
+      Object.keys(gone).forEach(emit);
+      return saved(tx(Object.keys(gone),function(t){
+        Object.keys(gone).forEach(function(k){gone[k].forEach(function(x){t.objectStore(k).delete(x);});});}));
+    },
+    /* «Очистить и начать с нуля»: остаётся только профиль хозяина устройства */
+    reset:function(){
+      var mine=find(data.profiles,meta.me);
+      COLLS.forEach(function(c){data[c]=[];});
+      if(mine) data.profiles=[mine];
+      meta.sample=false;
+      COLLS.forEach(emit);
+      return saved(writeAll(data,meta));
+    }
   };
 }
 function starter(){
@@ -1435,10 +1529,11 @@ function starter(){
              col("c-3","p-1","На проверке",3000,"yellow"),col("c-4","p-1","Готово",4000,"green"),
              col("c-5","p-2","Идеи",1000,"purple"),col("c-6","p-2","В работе",2000,"")],
     cards:[
-      t("t-1","c-1",1000,"Пригласить свою команду",
-        {kind:"note",assignee:"m-1",due:soon,desc:"Значок участников в правом верхнем углу: впишите почту коллеги и выберите роль."}),
+      t("t-1","c-1",1000,"Освоиться в Grid",
+        {kind:"note",assignee:"m-1",due:soon,desc:"Проекты, задачи и заметки здесь — пример. Когда освоитесь, удалите их или "+
+          "начните с нуля: Настройки → Данные → «Очистить и начать с нуля»."}),
       t("s-1","c-1",1000,"Удалить примеры",{parentId:"t-1",assignee:"m-1"}),
-      t("s-2","c-1",2000,"Пригласить коллег",{parentId:"t-1",assignee:"m-1"}),
+      t("s-2","c-1",2000,"Сохранить резервную копию",{parentId:"t-1",assignee:"m-1"}),
       t("t-2","c-1",2000,"Переименовать колонки под свой процесс",{priority:"low",kind:"improve"}),
       t("t-3","c-2",1000,"Прототип личного кабинета",
         {priority:"high",status:"doing",kind:"improve",assignee:"m-2",start:past,due:soon}),
@@ -1829,7 +1924,8 @@ function removeMember(mid){
 function addComment(cardId,text){
   text=(text||"").trim(); if(!text) return;
   var id=uid("k");
-  var body={cardId:cardId,authorId:S.me,author:nameOf(me()),body:text,createdAt:Date.now()};
+  var body=COLLAB?{cardId:cardId,authorId:S.me,author:nameOf(me()),body:text,createdAt:Date.now()}
+    :{cardId:cardId,authorId:"",author:"",body:text,createdAt:Date.now()};
   S.comments.push(Object.assign({id:id},body));
   w(S.store.set("comments",id,body));
   renderDrawer(true);
@@ -1922,7 +2018,7 @@ function removeNote(id){
 
 /* ═════════ файлы ═════════ */
 /* предел одного файла; тот же предел стоит у хранилища в supabase-schema.sql */
-var BUCKET="grid-files",FILE_MAX=10*1024*1024,DEMO_MAX=400*1024;
+var BUCKET="grid-files",FILE_MAX=10*1024*1024;
 /* link — к чему файл: {cardId} задачи, {noteId} заметки или {} — файл проекта */
 function pickFile(link){
   filePick.value=""; filePick.accept="";
@@ -1953,11 +2049,9 @@ function shrinkPhoto(f){
   });
 }
 function uploadFile(raw,link){
-  var limit=S.store.kind==="supabase"?FILE_MAX:DEMO_MAX;
   shrinkPhoto(raw).then(function(f){
-    if(f.size>limit){
-      flash("«"+raw.name+"» — "+fmtSize(f.size)+(f!==raw?" даже после сжатия":"")+". Можно прикрепить файл до "+fmtSize(limit)+
-        (S.store.kind==="supabase"?".":" в демо-режиме — подключите базу для файлов до "+fmtSize(FILE_MAX)+"."));
+    if(f.size>FILE_MAX){
+      flash("«"+raw.name+"» — "+fmtSize(f.size)+(f!==raw?" даже после сжатия":"")+". Можно прикрепить файл до "+fmtSize(FILE_MAX)+".");
       return;
     }
     if(f!==raw) flash("Фото сжато: "+fmtSize(raw.size)+" → "+fmtSize(f.size));
@@ -1980,14 +2074,11 @@ function storeFile(f,link){
       renderDrawer(true); renderMain();
     });
   }else{
-    var fr=new FileReader();
-    fr.onload=function(){
-      meta.data=fr.result;
-      S.files.push(Object.assign({id:id},meta));
-      w(S.store.set("files",id,meta));
-      renderDrawer(true); renderMain();
-    };
-    fr.readAsDataURL(f);
+    /* на устройстве файл хранится как есть, вместе с записью */
+    meta.blob=f;
+    S.files.push(Object.assign({id:id},meta));
+    w(S.store.set("files",id,meta));
+    renderDrawer(true); renderMain();
   }
 }
 function openFile(f){
@@ -1996,17 +2087,14 @@ function openFile(f){
       if(res.error||!res.data){flash("Не удалось открыть файл: "+((res.error||{}).message||""));return;}
       window.open(res.data.signedUrl,"_blank","noopener");
     });
-  }else if(f.data){
-    var a=document.createElement("a");
-    a.href=f.data; a.download=f.name; a.rel="noopener";
-    document.body.appendChild(a); a.click(); a.remove();
-  }else flash("Файл недоступен.");
+  }else if(f.blob) saveBlob(f.blob,f.name);
+  else flash("Файл недоступен.");
 }
-/* Адрес картинки для показа: в демо — сама картинка, в базе — подписанная
-   ссылка на час (бакет закрытый); ссылки держим, чтобы не просить заново. */
-var signedURLs={};
+/* Адрес картинки для показа: на устройстве — ссылка на сам файл, в базе —
+   подписанная ссылка на час (бакет закрытый); ссылки держим, чтобы не просить заново. */
+var signedURLs={},blobURLs={};
 function imageURL(f){
-  if(f.data) return Promise.resolve(f.data);
+  if(f.blob) return Promise.resolve(blobURLs[f.id]||(blobURLs[f.id]=URL.createObjectURL(f.blob)));
   var s=signedURLs[f.path];
   if(s&&s.until>Date.now()) return Promise.resolve(s.url);
   return S.store.sb.storage.from(BUCKET).createSignedUrl(f.path,3600).then(function(r){
@@ -2585,12 +2673,12 @@ function renderMain(){
   /* пока проекты не загрузились, сохранённый выбор не трогаем */
   if(S.projects.length&&(!cur||cur.deletedAt)) S.project=live.length?live[0].id:null;
   presenceFor(S.project);
-  renderRail(); renderTabs();
+  renderRail(); renderTabs(); renderNotice();
   if(S.mode==="boot") return;
   if(!live.length){
     mainEl.innerHTML='<div class="empty"><h2>Ни одного проекта</h2>'+
-      "<p>Проект — это отдельная доска со своей командой, колонками и задачами. Создайте первый — "+
-      "или попросите коллегу пригласить вас в свой.</p>"+
+      "<p>Проект — это отдельная доска со своими колонками, задачами и заметками. Создайте первый"+
+      (COLLAB?" — или попросите коллегу пригласить вас в свой.":".")+"</p>"+
       '<button class="btn" data-addproj="1">Создать проект</button></div>';
     return;
   }
@@ -2668,7 +2756,9 @@ function cardDrawerHTML(c){
     "</div></div>"+
     (c.due||c.start?'<span class="lbl">В календарь</span><div class="ctl cal-add">'+
       '<a class="btn ghost" href="'+esc(googleLink(c))+'" target="_blank" rel="noopener">'+ic("calendar")+"Google Календарь</a>"+
-      '<button class="btn ghost" data-dics="1" title="Для Outlook, Apple Календаря и других">'+ic("download")+"Файл .ics</button></div>":"")+
+      '<button class="btn ghost" data-dics="1" title="Для Outlook, Apple Календаря и других">'+ic("download")+"Файл .ics</button>"+
+      '<p class="small cal-note">«Google Календарь» — название и даты задачи будут переданы в ваш Google Календарь. '+
+        "«Файл .ics» остаётся на устройстве.</p></div>":"")+
   "</div>";
 
   if(!parent){
@@ -2699,9 +2789,10 @@ function cardDrawerHTML(c){
   /* комментировать может любой участник, удалить — автор или владелец */
   body+='<div><div class="sect-h"><h3>Комментарии</h3><span class="n">'+ks.length+"</span></div>"+
     '<div class="talk">'+ks.map(function(k){
-      var a=person(k.authorId)||{name:k.author||"Участник",color:""};
-      return '<div class="msg">'+avatar(a)+
-        '<div class="body"><div class="who"><b>'+esc(nameOf(a))+"</b>"+
+      /* без сервера комментарий — запись к задаче со временем, без автора */
+      var a=COLLAB?person(k.authorId)||{name:k.author||"Участник",color:""}:null;
+      return '<div class="msg'+(a?"":" plain")+'">'+(a?avatar(a):"")+
+        '<div class="body"><div class="who">'+(a?"<b>"+esc(nameOf(a))+"</b>":"")+
         "<time>"+esc(fmtWhen(k.createdAt))+"</time></div>"+
         '<div class="txt">'+esc(k.body)+"</div></div>"+
         (k.authorId===S.me||isOwner(c.projectId)
@@ -3273,10 +3364,12 @@ function backupData(all){
     notes:S.notes.filter(inP),
     files:S.files.filter(function(f){return inP(f)&&(!f.cardId||onCard(f));}).map(function(f){return Object.assign({},f);}),
     members:S.project_members.filter(inP).map(function(m){return {projectId:m.projectId,email:m.email,role:m.role};}),
-    people:Object.keys(who).map(person).filter(Boolean).map(function(p){return {id:p.id,email:p.email,name:nameOf(p)};})};
+    people:Object.keys(who).map(person).filter(Boolean).map(function(p){return {id:p.id,email:p.email,name:nameOf(p),color:p.color};})};
 }
 function fileData(f){
   if(f.data) return Promise.resolve(f.data);
+  if(f.blob) return new Promise(function(res,rej){
+    var fr=new FileReader();fr.onload=function(){res(fr.result);};fr.onerror=function(){rej(fr.error);};fr.readAsDataURL(f.blob);});
   if(S.store.kind!=="supabase"||!f.path) return Promise.resolve("");
   return S.store.sb.storage.from(BUCKET).download(f.path).then(function(r){
     if(r.error) throw r.error;
@@ -3289,12 +3382,14 @@ function exportBackup(){
   if(!S.bk.files) d.files=[];
   d.files.reduce(function(p,f){
     return p.then(function(){
-      return fileData(f).then(function(x){f.data=x;flash("Собираем файлы: "+(++n)+" из "+d.files.length);});
+      return fileData(f).then(function(x){f.data=x;delete f.blob;flash("Собираем файлы: "+(++n)+" из "+d.files.length);});
     });
   },Promise.resolve()).then(function(){
     var name="Grid Work — "+fileName(S.bk.all?"все проекты":d.projects[0].name,"проект")+" — "+todayISO()+".json";
     saveBlob(new Blob([JSON.stringify(d)],{type:"application/json"}),name);
     flash("Копия сохранена: "+name);
+    /* на устройстве помним, когда сохраняли, — для напоминания о копии */
+    if(S.store.setMeta) S.store.setMeta("lastBackupAt",Date.now()).then(function(){renderNotice();renderSettings();});
   }).catch(function(e){flash("Копия не собралась: "+((e&&e.message)||"нет связи с хранилищем"));});
 }
 function pickBackup(){
@@ -3309,8 +3404,9 @@ function readBackup(file){
     if(!d||d.app!==BACKUP_APP||!Array.isArray(d.projects)||!d.projects.length){flash("Это не резервная копия Grid Work");return;}
     var nf=(d.files||[]).filter(function(f){return f.data;}).length;
     if(!confirm("Копия от "+fmtWhen(d.exportedAt)+": проектов — "+d.projects.length+", задач — "+(d.cards||[]).length+
-      ", файлов — "+nf+".\n\nОни добавятся как новые проекты, то, что уже есть, не изменится. Вы станете владельцем, "+
-      "команда из копии получит приглашения. Восстановить?")) return;
+      ", файлов — "+nf+".\n\nОни добавятся как новые проекты, то, что уже есть, не изменится. "+
+      (COLLAB?"Вы станете владельцем, команда из копии получит приглашения. ":"Ответственные из копии появятся в списке участников. ")+
+      "Восстановить?")) return;
     w(restoreBackup(d).then(function(ids){
       closeSettings(); switchProject(ids[0]);
       flash("Восстановлено проектов: "+ids.length);
@@ -3326,12 +3422,24 @@ function restoreBackup(d){
   function list(k){return Array.isArray(d[k])?d[k]:[];}
   function rows(k,pid){return list(k).filter(function(x){return x.projectId===pid;});}
   function put(coll,id,x,extra){var b=Object.assign({},x,extra);delete b.id;return S.store.set(coll,id,b);}
-  /* человек из копии — тот, кто уже есть здесь (по почте), иначе никто */
+  /* Человек из копии — тот, кто уже есть здесь: с сервером — по почте, иначе
+     никто; на устройстве — по имени, а кого нет — добавляется в «Участники». */
+  var who={};
+  (d.people||[]).forEach(function(p){who[p.id]=p;});
   function here(oldId){
+    if(!COLLAB) return localPerson(who[oldId]);
     var e=mail[oldId]; if(!e) return "";
     if(e===mine) return S.me;
     var p=S.profiles.filter(function(x){return String(x.email).toLowerCase()===e;})[0];
     return p?p.id:"";
+  }
+  function localPerson(p){
+    if(!p||!p.name) return "";
+    var same=S.profiles.filter(function(x){return nameOf(x)===p.name;})[0];
+    if(same) return same.id;
+    var id=uid("m"),body={email:"",name:String(p.name).slice(0,60),color:safeColor(p.color),avatar:"",settings:{}};
+    S.profiles.push(Object.assign({id:id},body)); w(S.store.set("profiles",id,body));
+    return id;
   }
   /* стандартный тип остаётся, свой — тот, что восстановлен из копии */
   function kindId(scope,id){return !id?"":find(scope==="note"?NOTE_KINDS:TASK_KINDS,id)?id:map[id]||"";}
@@ -3340,7 +3448,7 @@ function restoreBackup(d){
       return p.then(function(){
         var id=uid("f"),meta={projectId:pid,cardId:f.cardId?map[f.cardId]||"":"",noteId:f.noteId?map[f.noteId]||"":"",name:f.name,size:f.size,
           mime:f.mime||"application/octet-stream",path:"",createdAt:f.createdAt||Date.now()};
-        if(S.store.kind!=="supabase") return put("files",id,meta,{data:f.data});
+        if(S.store.kind!=="supabase") return put("files",id,meta,{blob:dataURLBlob(f.data)});
         var path=pid+"/"+id+"-"+String(f.name).replace(/[^\w.\-]+/g,"_");
         return fetch(f.data).then(function(r){return r.blob();}).then(function(b){
           return S.store.sb.storage.from(BUCKET).upload(path,b,{contentType:meta.mime});
@@ -3369,9 +3477,9 @@ function restoreBackup(d){
       }).then(function(){
         /* комментарий другого человека восстанавливается с его именем, но без привязки к профилю */
         return Promise.all(list("comments").filter(function(k){return ids.indexOf(k.cardId)>=0;}).map(function(k){
-            return put("comments",nid(k.id,"k"),k,{cardId:map[k.cardId],authorId:here(k.authorId)===S.me?S.me:"",author:k.author||""});})
+            return put("comments",nid(k.id,"k"),k,{cardId:map[k.cardId],authorId:COLLAB&&here(k.authorId)===S.me?S.me:"",author:k.author||""});})
           .concat(rows("notes",p.id).map(function(n){return put("notes",nid(n.id,"n"),n,{projectId:pid,kind:kindId("note",n.kind)});}))
-          .concat(rows("members",p.id).filter(function(m){return String(m.email).toLowerCase()!==mine;}).map(function(m){
+          .concat(rows("members",p.id).filter(function(m){return COLLAB&&String(m.email).toLowerCase()!==mine;}).map(function(m){
             var e=String(m.email).toLowerCase(),known=S.profiles.filter(function(x){return String(x.email).toLowerCase()===e;})[0];
             return put("project_members",uid("pm"),{projectId:pid,userId:known?known.id:"",email:e,role:m.role,createdAt:Date.now()});
           })));
@@ -3412,37 +3520,73 @@ function pickPhoto(){
   };
   filePick.click();
 }
-/* личное: имя, фото и цвет видят коллеги — в задачах и комментариях */
+/* личное: имя, фото и цвет — в задачах (и у коллег, когда есть сервер) */
 function profileHTML(){
-  var m=me()||{id:S.me,name:"",email:S.email,color:"",avatar:""},demo=S.store.kind!=="supabase";
+  var m=me()||{id:S.me,name:"",email:S.email,color:"",avatar:""};
   return setSection("profile","Мой профиль",
     '<div class="who-row"><div class="av-edit">'+avatar(m,"lg")+
       '<button class="lnk" data-pphoto="1">'+(m.avatar?"Сменить":"Фото")+"</button>"+
       (m.avatar?'<button class="lnk" data-pphotodel="1">Убрать</button>':"")+"</div><div>"+
       '<input class="in" data-pname="1" maxlength="40" placeholder="Ваше имя" aria-label="Ваше имя" value="'+esc(m.name)+'">'+
-      "<small>"+esc(m.email||"")+"</small></div></div>"+
+      (COLLAB?"<small>"+esc(m.email||"")+"</small>":"")+"</div></div>"+
     '<div class="tints" aria-label="Цвет инициалов">'+PALETTE.map(function(c){
       return '<button class="tint" data-pcolor="'+c+'" aria-pressed="'+(m.color===c)+
         '" aria-label="Цвет '+c+'" style="--ki:'+c+'"><i></i></button>';}).join("")+"</div>"+
-    (demo
-      ? '<p class="small">Демо: посмотрите на доску глазами другого участника — у каждого своя роль в проекте.</p>'+
-        '<div class="choice" role="radiogroup" aria-label="Чьими глазами смотреть">'+S.profiles.map(function(p){
-          var r=find(ROLES,roleOf(S.project,p.id));
-          return '<label><input type="radio" name="demoMe" value="'+esc(p.id)+'"'+(p.id===S.me?" checked":"")+">"+
-            "<span>"+esc(nameOf(p))+"<small>"+(r?r.label:"Не участник этого проекта")+"</small></span></label>";}).join("")+"</div>"
-      : '<div class="row"><button class="btn ghost" data-signout="1">Выйти из аккаунта</button></div>'));
+    (COLLAB&&S.store.kind==="supabase"?'<div class="row"><button class="btn ghost" data-signout="1">Выйти из аккаунта</button></div>':""));
+}
+/* Без сервера «Участники» — просто имена: кого можно назначить ответственным.
+   Список общий для всех проектов, первый в нём — вы (ваш профиль). */
+function peopleHTML(){
+  var list=people().filter(function(p){return p.id!==S.me;}),m=me();
+  return setSection("people","Участники",
+    "<p>Имена для поля «Ответственный» и фильтра. Список общий для всех проектов.</p>"+
+    "<div>"+(m?'<div class="mrow">'+avatar(m)+'<span class="lbl"><b>'+esc(nameOf(m))+" (вы)</b><small>имя и фото — в «Мой профиль»</small></span></div>":"")+
+      list.map(function(p){
+        return '<div class="mrow">'+avatar(p)+'<input data-pplname="'+esc(p.id)+'" maxlength="40" value="'+esc(p.name)+
+          '" aria-label="Имя участника">'+
+          '<button class="x" data-ppldel="'+esc(p.id)+'" aria-label="Удалить «'+esc(nameOf(p))+'»" title="Удалить">'+X_BTN+"</button></div>";
+      }).join("")+"</div>"+
+    '<div class="invite"><input class="in" data-pplnew="1" maxlength="40" placeholder="Имя" aria-label="Имя нового участника" autocomplete="off">'+
+      '<button class="btn" data-ppladd="1">Добавить</button></div>');
+}
+function addPerson(){
+  var i=$("[data-pplnew]",settingsEl),v=(i?i.value:"").trim();
+  if(!v){flash("Впишите имя");return;}
+  var id=uid("m"),body={email:"",name:v,color:PALETTE[S.profiles.length%PALETTE.length],avatar:"",settings:{}};
+  S.profiles.push(Object.assign({id:id},body)); w(S.store.set("profiles",id,body));
+  renderAll(); renderSettings(true);
+  var n=$("[data-pplnew]",settingsEl); if(n) n.focus();
+}
+function renamePerson(id,v){
+  v=v.trim(); var p=person(id); if(!p) return;
+  if(!v){renderSettings(true);return;}
+  /* настройки не перерисовываем: имя в поле уже новое, а перерисовка под
+     курсором съела бы нажатие на соседнюю кнопку */
+  p.name=v; w(S.store.update("profiles",id,{name:v}));
+  renderMain(); renderSide(); if(S.open||S.openNote) renderDrawer();
+}
+/* задачи удалённого участника остаются без ответственного */
+function removePerson(id){
+  var p=person(id),n=S.cards.filter(function(c){return c.assignee===id;});
+  if(!p||!confirm("Удалить «"+nameOf(p)+"» из участников?"+(n.length?" Задач без ответственного станет: "+n.length+".":""))) return;
+  n.forEach(function(c){c.assignee="";w(S.store.update("cards",c.id,{assignee:""}));});
+  S.profiles=S.profiles.filter(function(x){return x.id!==id;}); w(S.store.del("profiles",id));
+  if(S.filter.assignee===id) S.filter.assignee="all";
+  renderAll(); renderSettings(true);
+}
+/* выбор личной настройки (prefs) из списка вариантов [значение, подпись] */
+function prefPick(key,label,opts){
+  var p=prefs();
+  return '<label class="opt"><span>'+label+'</span><select class="in" data-pref="'+key+'">'+opts.map(function(o){
+    return '<option value="'+o[0]+'"'+(String(p[key])===String(o[0])?" selected":"")+">"+o[1]+"</option>";}).join("")+"</select></label>";
 }
 function displayHTML(){
   var p=prefs();
-  function pick(key,label,opts){
-    return '<label class="opt"><span>'+label+'</span><select class="in" data-pref="'+key+'">'+opts.map(function(o){
-      return '<option value="'+o[0]+'"'+(String(p[key])===String(o[0])?" selected":"")+">"+o[1]+"</option>";}).join("")+"</select></label>";
-  }
   return setSection("display","Отображение",
-    pick("view","Вид при открытии",[["board","Доска"],["calendar","Календарь"],["gantt","Диаграмма Ганта"]])+
-    pick("density","Карточки",[["normal","Обычные"],["compact","Компактные"]])+
-    pick("weekStart","Неделя начинается с",[[1,"понедельника"],[0,"воскресенья"]])+
-    pick("dateFmt","Формат даты",[["short","27 окт"],["num","27.10.26"]])+
+    prefPick("view","Вид при открытии",[["board","Доска"],["calendar","Календарь"],["gantt","Диаграмма Ганта"]])+
+    prefPick("density","Карточки",[["normal","Обычные"],["compact","Компактные"]])+
+    prefPick("weekStart","Неделя начинается с",[[1,"понедельника"],[0,"воскресенья"]])+
+    prefPick("dateFmt","Формат даты",[["short","27 окт"],["num","27.10.26"]])+
     '<label class="switch"><input type="checkbox" data-pref="hideDone"'+(p.hideDone?" checked":"")+">"+
       "<span><b>Скрывать выполненные задачи</b><small>Сразу при открытии Grid Work. Кнопка в шапке по-прежнему их показывает.</small></span></label>");
 }
@@ -3528,24 +3672,45 @@ function backupHTML(){
         "</small></span></label>":"")+
     '<div class="row">'+(p?'<button class="btn" data-bkexport="1">Сохранить копию</button>':"")+
       '<button class="btn ghost" data-bkimport="1">Восстановить из файла</button></div>'+
-    '<p class="small">Восстановление добавляет проекты из файла как новые — то, что уже есть, не меняется. Вы станете их владельцем, '+
-      "команда из копии получит приглашения с прежними ролями. Ответственные сохранятся у тех, кто уже входил в Grid.</p>");
+    (COLLAB?'<p class="small">Восстановление добавляет проекты из файла как новые — то, что уже есть, не меняется. Вы станете их владельцем, '+
+      "команда из копии получит приглашения с прежними ролями. Ответственные сохранятся у тех, кто уже входил в Grid.</p>"
+    :'<p class="small">'+(S.store.meta.lastBackupAt?"Последняя копия — "+esc(fmtWhen(S.store.meta.lastBackupAt))+". ":"Копий ещё не было. ")+
+      "Восстановление добавляет проекты из файла как новые — то, что уже есть, не меняется.</p>"+
+      prefPick("backupEvery","Напоминать о копии",[["week","раз в неделю"],["month","раз в месяц"],["never","не напоминать"]])));
 }
+/* сколько места занято: с сервером — файлы в Supabase из 1 ГБ; на устройстве —
+   всё, что браузер отвёл сайту (вместе с Grid Life и копией для работы без сети) */
 function fetchStorage(){
-  if(!S.store||S.store.kind!=="supabase") return;
-  S.store.sb.rpc("grid_storage_used").then(function(r){
-    if(!r.error){S.storageUsed=Number(r.data)||0; renderSettings();}});
+  if(!S.store) return;
+  if(S.store.kind==="supabase"){
+    S.store.sb.rpc("grid_storage_used").then(function(r){
+      if(!r.error){S.storageUsed=Number(r.data)||0; renderSettings();}});
+    return;
+  }
+  if(navigator.storage&&navigator.storage.estimate) navigator.storage.estimate().then(function(e){S.estimate=e;renderSettings();},function(){});
+  if(navigator.storage&&navigator.storage.persisted) navigator.storage.persisted().then(function(p){S.persisted=p;renderSettings();},function(){});
 }
 function storageHTML(){
-  /* в демо всё, включая файлы, лежит одной строкой в localStorage — считаем её размер */
-  var demo=S.store.kind!=="supabase",used=demo?COLLS.reduce(function(s,c){return s+JSON.stringify(S[c]).length;},0):S.storageUsed;
-  var cap=demo?5*1048576:1073741824,pct=used==null?0:Math.min(100,Math.round(used/cap*100));
+  if(S.store.kind!=="supabase"){
+    var est=S.estimate,lp=est&&est.quota?Math.min(100,Math.round(est.usage/est.quota*100)):0;
+    return setSection("storage","Хранилище",
+      "<p>"+esc(LOCAL_NOTE)+"</p>"+
+      (est&&est.quota?'<div class="meter-h"><span>'+fmtSize(est.usage)+" из "+fmtSize(est.quota)+"</span><span>"+lp+"%</span></div>"+
+        '<div class="meter'+(lp>=80?" warn":"")+'" role="progressbar" aria-label="Занято места в браузере" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+lp+'">'+
+          '<i style="width:'+lp+'%"></i></div>'+
+        '<p class="small">Столько браузер отвёл этому сайту — вместе с Grid Life и копией приложения для работы без сети.</p>'
+        :'<p class="small">Браузер не сообщает, сколько места свободно.</p>')+
+      (S.persisted===true?'<p class="small">Браузер разрешил постоянное хранение и не удалит данные сам.</p>'
+        :S.persisted===false?'<p class="small">Браузер пока не обещал хранить данные постоянно: при нехватке места он может их очистить. '+
+          'Сохраняйте резервные копии.</p><div class="row"><button class="btn ghost" data-persist="1">Попросить постоянное хранение</button></div>':"")+
+      '<div class="row"><button class="btn danger" data-reset="1">Очистить и начать с нуля</button></div>');
+  }
+  var used=S.storageUsed,cap=1073741824,pct=used==null?0:Math.min(100,Math.round(used/cap*100));
   return setSection("storage","Хранилище",
     '<div class="meter-h"><span>'+(used==null?"считаем…":fmtSize(used)+" из "+fmtSize(cap))+"</span><span>"+(used==null?"":pct+"%")+"</span></div>"+
     '<div class="meter'+(pct>=80?" warn":"")+'" role="progressbar" aria-label="Занято места" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'">'+
       '<i style="width:'+pct+'%"></i></div>'+
-    '<p class="small">'+(demo?"В демо всё лежит в этом браузере, а он даёт около 5 МБ."
-      :"Бесплатный план Supabase — 1 ГБ на файлы всех проектов. Место освобождается, когда файлы удаляют.")+"</p>");
+    '<p class="small">Бесплатный план Supabase — 1 ГБ на файлы всех проектов. Место освобождается, когда файлы удаляют.</p>');
 }
 /* В корзине — удалённое в этом проекте и удалённые проекты, где вы владелец.
    Задача, удалённая вместе с колонкой или задачей-родителем, входит в их строку. */
@@ -3594,7 +3759,7 @@ function restoreItem(coll,id){
 function versionDate(){var d=new Date(document.lastModified);return isNaN(d)?"":d.getDate()+" "+MONTHS[d.getMonth()]+" "+d.getFullYear();}
 function feedbackTo(){var to=String((window.GRID_CONFIG||{}).feedback||"").trim();return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)?to:"";}
 function feedbackInfo(){
-  return "Grid, версия от "+versionDate()+"\nРежим: "+(S.store.kind==="supabase"?"база Supabase":"демо")+
+  return "Grid, версия от "+versionDate()+"\nРежим: "+(S.store.kind==="supabase"?"база Supabase":COLLAB?"демо":"на этом устройстве")+
     "\nЭкран: "+screen.width+"×"+screen.height+"\nБраузер: "+navigator.userAgent;
 }
 function aboutHTML(){
@@ -3745,7 +3910,34 @@ function sendTestPush(){
       (r.error&&r.error.message?": "+r.error.message:""));
   });
 }
+/* переключатель личной настройки (prefs) */
+function prefSwitch(key,title,note){
+  return '<label class="switch"><input type="checkbox" data-pref="'+key+'"'+(prefs()[key]?" checked":"")+"><span><b>"+title+"</b>"+
+    (note?"<small>"+note+"</small>":"")+"</span></label>";
+}
+function quietHTML(){
+  var p=prefs();
+  return prefSwitch("quiet","Тихие часы",COLLAB?"Уведомления за это время придут, когда тихие часы закончатся."
+      :"Напоминание, которое пришлось на них, Grid покажет, когда они закончатся.")+
+    (p.quiet?'<div class="quiet"><input class="in" type="time" data-pref="quietFrom" value="'+esc(p.quietFrom)+'" aria-label="Тихие часы с">'+
+      '<span>–</span><input class="in" type="time" data-pref="quietTo" value="'+esc(p.quietTo)+'" aria-label="Тихие часы до"></div>':"");
+}
+/* Системные уведомления браузера, пока Grid открыт (без сервера): спросить
+   разрешение. Общее для Grid Work и Grid Life — его зовёт и life.js. */
+function systemNotifyHTML(){
+  var perm=window.Notification?Notification.permission:"none";
+  return perm==="default"?'<div class="row"><button class="btn ghost" data-notifyask="1">Разрешить системные уведомления</button></div>'+
+      '<p class="small">Тогда напоминание придёт, даже если вкладка Grid не на экране.</p>'
+    :perm==="denied"?'<p class="small">Системные уведомления запрещены в настройках браузера — напоминания появляются внутри Grid.</p>':"";
+}
 function notifyHTML(){
+  if(!COLLAB) return setSection("notify","Уведомления",
+    "<p>Пока Grid открыт, он напоминает о дедлайнах ваших задач и задач без ответственного — за день и в день дедлайна, в 9:00.</p>"+
+    prefSwitch("pushDue","Напоминать о дедлайнах")+quietHTML()+systemNotifyHTML()+
+    "<p><b>Когда Grid закрыт.</b> Сохраните дедлайны в календарь телефона — он напомнит сам, даже без интернета.</p>"+
+    '<div class="row"><button class="btn ghost" data-dueics="1">Файл .ics</button></div>'+
+    '<p class="small">В файле — невыполненные задачи с дедлайном и напоминания за день и в день дедлайна в 9:00. '+
+      "Когда дедлайны поменяются, сохраните файл заново.</p>");
   var p=prefs(),sup=pushSupport(),on=workPushOn()&&sup==="ok"&&Notification.permission==="granted",device;
   if(S.store.kind!=="supabase")
     device='<div class="drop-hint">Уведомления заработают после подключения базы Supabase и функции grid-push — шаги в README.</div>';
@@ -3760,18 +3952,68 @@ function notifyHTML(){
         ?"Запрещены в настройках браузера или телефона — разрешите их для Grid, затем включите здесь."
         :"Приходят, даже когда Grid закрыт.")+"</small></span></label>"+
     (on?'<div class="row"><button class="btn ghost" data-pushtest="1">Прислать пробное</button></div>':"");
-  function sw(key,title,note){
-    return '<label class="switch"><input type="checkbox" data-pref="'+key+'"'+(p[key]?" checked":"")+"><span><b>"+title+"</b>"+
-      (note?"<small>"+note+"</small>":"")+"</span></label>";
-  }
   return setSection("notify","Уведомления",
     "<p>О задачах, где вы ответственный, а если ответственного нет — где вы автор.</p>"+device+
-    sw("pushDue","Дедлайны","За день и в день дедлайна, в 9:00 по времени телефона.")+
-    sw("pushAssigned","Вас назначили ответственным")+
-    sw("pushComment","Комментарий к вашей задаче")+
-    sw("quiet","Тихие часы","Уведомления за это время придут, когда тихие часы закончатся.")+
-    (p.quiet?'<div class="quiet"><input class="in" type="time" data-pref="quietFrom" value="'+esc(p.quietFrom)+'" aria-label="Тихие часы с">'+
-      '<span>–</span><input class="in" type="time" data-pref="quietTo" value="'+esc(p.quietTo)+'" aria-label="Тихие часы до"></div>':""));
+    prefSwitch("pushDue","Дедлайны","За день и в день дедлайна, в 9:00 по времени телефона.")+
+    prefSwitch("pushAssigned","Вас назначили ответственным")+
+    prefSwitch("pushComment","Комментарий к вашей задаче")+
+    quietHTML());
+}
+
+/* ═════════ напоминания о дедлайнах без сервера ═════════ */
+/* Пока Grid открыт: за день и в день дедлайна, в 9:00 — о ваших задачах и
+   задачах без ответственного. В тихие часы напоминание ждёт их конца.
+   Системное уведомление — если браузер разрешил, иначе подсказка в окне.
+   После сна устройства пропущенное старше 10 минут не показываем. */
+function mins(hm){var p=String(hm||"").split(":");return (+p[0]||0)*60+(+p[1]||0);}
+function afterQuiet(ts){
+  var p=prefs(); if(!p.quiet) return ts;
+  var a=mins(p.quietFrom),b=mins(p.quietTo),d=new Date(ts),t=d.getHours()*60+d.getMinutes();
+  if(a===b||!(a<b?t>=a&&t<b:t>=a||t<b)) return ts;
+  return ts+((b-t+1440)%1440)*60000;
+}
+function mineToRemind(c){return !!c.due&&!c.done&&!c.archived&&onBoard(c)&&(!c.assignee||c.assignee===S.me);}
+function dueBetween(from,to){
+  var out=[];
+  S.cards.filter(mineToRemind).forEach(function(c){
+    [[-1,"Дедлайн завтра"],[0,"Дедлайн сегодня"]].forEach(function(k){
+      var d=parseISO(c.due); d.setDate(d.getDate()+k[0]); d.setHours(9,0,0,0);
+      var at=afterQuiet(d.getTime());
+      if(at>from&&at<=to) out.push({c:c,at:at,what:k[1]});
+    });
+  });
+  return out.sort(function(x,y){return x.at-y.at;});
+}
+var dueTickAt=Date.now();
+function dueTick(){
+  var now=Date.now(),from=Math.max(dueTickAt,now-600000); dueTickAt=now;
+  if(COLLAB||!S.store||S.store.kind!=="local"||!prefs().pushDue) return;
+  var due=dueBetween(from,now); if(!due.length) return;
+  var x=due[0],p=project(x.c.projectId),body=x.what+(p?" · "+p.name:"")+(due.length>1?" · и ещё "+(due.length-1):"");
+  if(window.Notification&&Notification.permission==="granted"&&navigator.serviceWorker&&navigator.serviceWorker.controller){
+    navigator.serviceWorker.ready.then(function(reg){
+      reg.showNotification(x.c.title||"Без названия",{body:body,tag:"due-"+x.c.id,icon:"icons/grid-192.png",
+        data:{url:"grid.html#task="+encodeURIComponent(x.c.id)}});});
+    return;
+  }
+  flash((x.c.title||"Без названия")+" — "+body,function(){location.hash="#task="+encodeURIComponent(x.c.id);},"Открыть");
+}
+setInterval(dueTick,20000);
+/* дедлайны в календарь телефона: напоминания за день и в день, в 9:00 */
+function deadlinesICS(){
+  var list=S.cards.filter(mineToRemind);
+  if(!list.length){flash("Нет невыполненных задач с дедлайном");return;}
+  var now=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,""),lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Grid//Work//RU"];
+  list.forEach(function(c){
+    var next=parseISO(c.due); next.setDate(next.getDate()+1);
+    lines.push("BEGIN:VEVENT","UID:"+c.id+"-due@grid","DTSTAMP:"+now,"DTSTART;VALUE=DATE:"+c.due.replace(/-/g,""),
+      "DTEND;VALUE=DATE:"+iso(next).replace(/-/g,""),"SUMMARY:"+icsText("Дедлайн: "+(c.title||"Без названия")),
+      "DESCRIPTION:"+icsText(calDetails(c)),"TRANSP:TRANSPARENT",
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+icsText("Дедлайн завтра"),"TRIGGER:-PT15H","END:VALARM",
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+icsText("Дедлайн сегодня"),"TRIGGER:PT9H","END:VALARM","END:VEVENT");
+  });
+  lines.push("END:VCALENDAR");
+  saveBlob(new Blob([lines.map(icsFold).join("\r\n")+"\r\n"],{type:"text/calendar;charset=utf-8"}),"Grid Work — дедлайны.ics");
 }
 /* ключ VAPID спрашиваем при открытии настроек: так видно, настроены ли уведомления */
 function checkPush(){
@@ -3823,6 +4065,12 @@ function removeAccess(email){
 /* сверху — личное, ниже — проект (меняет владелец, действует для всех), данные и о программе */
 function settingsHTML(){
   var p=project()&&!project().deletedAt?project():null;
+  if(!COLLAB) return drawerHead("Настройки")+'<div class="d-body wset">'+
+    groupHead("Вы и участники","Профиль, имена для поля «Ответственный», вид и напоминания.")+
+      profileHTML()+peopleHTML()+displayHTML()+notifyHTML()+
+    (p?groupHead("Проект «"+p.name+"»","Название, перенос выполненных, статусы и свои типы.")+projectHTML()+typesHTML():"")+
+    groupHead("Данные",LOCAL_NOTE)+backupHTML()+storageHTML()+trashHTML()+
+    aboutHTML()+"</div>";
   return drawerHead("Настройки")+'<div class="d-body wset">'+
     groupHead("Лично для вас","Видите и меняете только вы.")+profileHTML()+displayHTML()+notifyHTML()+calendarsHTML()+
     (p?groupHead("Проект «"+p.name+"»",isOwner()?"Вы владелец: изменения действуют для всей команды."
@@ -3835,8 +4083,14 @@ function settingsOpen(){return settingsEl.classList.contains("on");}
 function settingsContent(){return isWork()?settingsHTML():GridLife.settingsHTML();}
 /* Перерисовка открытых настроек. Пока человек печатает в поле, её
    откладываем (force — перерисовать всё равно); прокрутку сохраняем. */
+/* Пока в настройках нажата мышь или палец, не перерисовываем: иначе кнопка
+   под курсором сменится и нажатие пропадёт (на устройстве данные меняются
+   мгновенно — например, имя сохраняется в момент ухода из поля). Дорисуем
+   сразу после нажатия. */
+var settingsPressed=false,settingsPending=false;
 function renderSettings(force){
   if(!settingsOpen()) return;
+  if(!force&&settingsPressed){settingsPending=true;return;}
   var ae=document.activeElement;
   if(!force&&settingsEl.contains(ae)&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)&&ae.type!=="radio") return;
   var was=$(".d-body",settingsEl),keep=was?was.scrollTop:0;
@@ -3881,10 +4135,19 @@ function sendInvite(){
 function copyText(text,ok){
   navigator.clipboard.writeText(text).then(function(){flash(ok);},function(){flash("Не удалось скопировать");});
 }
+settingsEl.addEventListener("pointerdown",function(){settingsPressed=true;},true);
+document.addEventListener("pointerup",function(){
+  if(!settingsPressed) return;
+  settingsPressed=false;
+  if(settingsPending){settingsPending=false;setTimeout(function(){renderSettings();},0);}
+},true);
 settingsEl.addEventListener("click",function(e){
   var t=e.target,f=myFeed(),b;
   if(t.closest("[data-dclose]")){closeSettings();return;}
+  /* разрешение на системные уведомления — общее для Grid Work и Grid Life */
+  if(t.closest("[data-notifyask]")){Notification.requestPermission().then(function(){renderSettings(true);});return;}
   if(!isWork()) return;
+  if(t.closest("[data-dueics]")){deadlinesICS();return;}
   if((b=t.closest("[data-pcolor]"))){patchProfile({color:b.dataset.pcolor});return;}
   if(t.closest("[data-pphoto]")){pickPhoto();return;}
   if(t.closest("[data-pphotodel]")){patchProfile({avatar:""});return;}
@@ -3893,12 +4156,16 @@ settingsEl.addEventListener("click",function(e){
   if(t.closest("[data-accadd]")){addAccess();return;}
   if((b=t.closest("[data-accdel]"))){removeAccess(b.dataset.accdel);return;}
   if(t.closest("[data-invite]")){sendInvite();return;}
+  if(t.closest("[data-ppladd]")){addPerson();return;}
+  if((b=t.closest("[data-ppldel]"))){removePerson(b.dataset.ppldel);return;}
   if((b=t.closest("[data-mdel]"))){removeMember(b.dataset.mdel);renderSettings(true);return;}
   if(t.closest("[data-copylink]")){copyText(location.origin+location.pathname,"Ссылка на Grid скопирована");return;}
   if((b=t.closest("[data-setstatus]"))){statusSheet(b);return;}
   if((b=t.closest("[data-setkinds]"))){kindList(b,b.dataset.setkinds);return;}
   if(t.closest("[data-bkexport]")){exportBackup();return;}
   if(t.closest("[data-bkimport]")){pickBackup();return;}
+  if(t.closest("[data-reset]")){resetLocal();return;}
+  if(t.closest("[data-persist]")){persistAsked=false;askPersist();return;}
   if(t.closest("[data-feedback]")){copyText(feedbackInfo(),"Сведения о версии скопированы — вставьте их в письмо");return;}
   if((b=t.closest("[data-trestore]"))){var r=b.dataset.trestore.split(":");restoreItem(r[0],r.slice(1).join(":"));return;}
   if((b=t.closest("[data-tpurge]"))){
@@ -3922,12 +4189,15 @@ settingsEl.addEventListener("click",function(e){
 settingsEl.addEventListener("keydown",function(e){
   if(e.key!=="Enter") return;
   if(e.target.matches("[data-inv]")){e.preventDefault();sendInvite();}
+  else if(e.target.matches("[data-pplnew]")){e.preventDefault();addPerson();}
+  else if(e.target.matches("[data-pplname]")){e.preventDefault();e.target.blur();}
   else if(e.target.matches("[data-accin]")){e.preventDefault();addAccess();}
   else if(e.target.matches("[data-pname],[data-projname]")) e.target.blur();
 });
 settingsEl.addEventListener("change",function(e){
   var t=e.target,v;
   if(!isWork()) return;
+  if(t.matches("[data-pplname]")){renamePerson(t.dataset.pplname,t.value);return;}
   if(t.matches("[data-pname]")){
     v=t.value.trim(); if(!v){t.value=(me()||{}).name||"";return;}
     patchProfile({name:v}); return;}
@@ -3950,9 +4220,6 @@ settingsEl.addEventListener("change",function(e){
   if(t.matches("[data-mrole]")){setRole(t.dataset.mrole,t.value);return;}
   if(t.matches("[data-bkfiles]")){S.bk.files=t.checked;return;}
   if(t.name==="bkScope"){S.bk.all=t.value==="all";renderSettings(true);return;}
-  if(t.name==="demoMe"){
-    S.me=t.value; try{localStorage.setItem("grid.demo.me",S.me);}catch(err){}
-    closeDrawer(); renderAll(); renderSettings(true); return;}
   if(t.name!=="feedScope") return;
   var f=myFeed();
   if(f){f.scope=t.value;w(S.store.update("feeds",f.id,{scope:f.scope}));}
@@ -4232,7 +4499,7 @@ $("#fDone").addEventListener("click",function(e){
 $("#fPriority").innerHTML='<option value="all">Любой приоритет</option>'+
   PRIOS.map(function(p){return '<option value="'+p.id+'">'+esc(p.label)+"</option>";}).join("");
 $("#btnSide").addEventListener("click",function(){if(sideOpen())closeSide();else openSide();});
-$("#btnMembers").addEventListener("click",function(){openSettings("team");});
+$("#btnMembers").addEventListener("click",function(){openSettings(COLLAB?"team":"people");});
 $("#btnMe").addEventListener("click",function(){openSettings("profile");});
 $("#boardTitle").addEventListener("click",function(e){
   var btn=e.currentTarget,p=project(); if(!p) return;
@@ -4313,18 +4580,65 @@ function attach(store){
         if(COLLS.every(function(c){return loaded[c];})){loaded.all=1;purgeOld();}}
     });
   });
-  if(store.kind==="local"){
-    var notice=$("#notice");
-    notice.hidden=false;
-    notice.innerHTML='<b>Демо-режим.</b> Задачи хранятся только в этом браузере, и коллеги их не видят. Чтобы работать командой, подключите базу Supabase.';
-  }
+}
+/* Плашка над доской (без сервера): при первом запуске — что это пример и
+   где хранятся данные; потом — мягкое напоминание о резервной копии. */
+var LOCAL_NOTE="Все данные хранятся только на этом устройстве и никуда не отправляются. "+
+  "Сохраняйте резервную копию: при очистке браузера или смене устройства данные пропадут.";
+function backupDue(){
+  var m=S.store&&S.store.meta,every=prefs().backupEvery;
+  if(!m||every==="never"||!liveProjects().length) return false;
+  var last=Math.max(m.lastBackupAt||0,m.backupSnooze||0,m.started||0);
+  return Date.now()-last>(every==="month"?30:7)*864e5;
+}
+function renderNotice(){
+  var el=$("#notice"),m=S.store&&S.store.kind==="local"&&!COLLAB?S.store.meta:null;
+  if(!m||!isWork()){el.hidden=true;el.innerHTML="";return;}
+  if(m.sample){
+    el.hidden=false;
+    el.innerHTML='<span><b>Это пример</b> — проекты, задачи и заметки, чтобы было видно, как всё устроено. '+esc(LOCAL_NOTE)+"</span>"+
+      '<span class="row"><button class="btn" data-nreset="1">Очистить и начать с нуля</button>'+
+      '<button class="btn ghost" data-nkeep="1">Оставить пример</button></span>';
+  }else if(backupDue()){
+    el.hidden=false;
+    el.innerHTML="<span><b>Сохраните резервную копию.</b> Данные Grid Work хранятся только на этом устройстве — "+
+      "копия пригодится, если с ним что-то случится.</span>"+
+      '<span class="row"><button class="btn" data-nbackup="1">Сохранить копию</button>'+
+      '<button class="btn ghost" data-nsnooze="1">Позже</button></span>';
+  }else{el.hidden=true;el.innerHTML="";}
+}
+/* «Очистить и начать с нуля»: всё Grid Work на устройстве, кроме вашего профиля */
+function resetLocal(){
+  if(!confirm("Удалить все проекты, задачи, заметки и файлы Grid Work на этом устройстве? Ваш профиль останется.\n\n"+
+    "Отменить будет нельзя. Если данные нужны, сначала сохраните резервную копию.")) return;
+  S.open=null; S.openNote=null; closeDrawer(); closeSettings();
+  S.store.reset().then(function(){renderAll();flash("Grid Work очищен — можно начинать с нуля");});
+}
+$("#notice").addEventListener("click",function(e){
+  var t=e.target;
+  if(t.closest("[data-nreset]")) resetLocal();
+  else if(t.closest("[data-nkeep]")) S.store.setMeta("sample",false).then(renderNotice);
+  else if(t.closest("[data-nbackup]")){S.bk.all=true;exportBackup();}
+  else if(t.closest("[data-nsnooze]")) S.store.setMeta("backupSnooze",Date.now()).then(renderNotice);
+});
+/* без сервера Grid Work открывается сразу — данные на этом устройстве */
+function startLocal(){
+  var st=localStore();
+  st.ready.then(function(m){S.me=m.me;attach(st);},function(e){
+    mainEl.innerHTML='<div class="empty"><h2>Доска не открылась</h2><p>Браузер не дал хранить данные на устройстве'+
+      (e&&e.message?": "+esc(e.message):"")+". Проверьте, не включён ли режим инкогнито с запретом хранения.</p></div>";
+  });
 }
 try{S.project=localStorage.getItem("grid.project")||null;}catch(e){}
 try{(JSON.parse(localStorage.getItem("grid.expanded"))||[]).forEach(function(id){S.expanded[id]=true;});}catch(e){}
 renderRail(); renderTabs();
 
-var CFG=(window.GRID_CONFIG&&window.GRID_CONFIG.url)?window.GRID_CONFIG:null;
-if(!CFG){try{var raw=localStorage.getItem("grid.cfg");
+/* без совместной работы ключи и вход не нужны: прежние ключи (grid.cfg) и
+   сессии Supabase (sb-…) из браузера убираем */
+if(!COLLAB){try{Object.keys(localStorage).forEach(function(k){
+  if(k==="grid.cfg"||k==="grid.push.work"||/^sb-/.test(k)) localStorage.removeItem(k);});}catch(e){}}
+var CFG=COLLAB&&window.GRID_CONFIG.url?window.GRID_CONFIG:null;
+if(COLLAB&&!CFG){try{var raw=localStorage.getItem("grid.cfg");
   if(raw){var o=JSON.parse(raw);if(o&&o.url&&o.anonKey)CFG=o;}}catch(e){}}
 var AUTH=(CFG&&CFG.auth)||"google";
 
@@ -4335,11 +4649,7 @@ function showGate(html,wire){
   if(wire) wire(gateEl);
 }
 /* в демо «вы» — один из примеров; кого выбрать, решают в настройках профиля */
-function demoMode(){
-  try{S.me=localStorage.getItem("grid.demo.me");}catch(e){}
-  if(!/^m-[123]$/.test(S.me||"")) S.me="m-1";
-  hideGate(); attach(localStore());
-}
+function demoMode(){hideGate();startLocal();}
 function setupScreen(msg){
   showGate('<div class="gate-mark">Grid Work</div><h1>Подключите базу</h1>'+
     "<p>Доски хранятся в Supabase. Вставьте адрес проекта и публичный ключ <code>anon</code> — они лежат в Supabase в разделе Project&nbsp;Settings → API.</p>"+
@@ -4453,6 +4763,7 @@ function boot(){
 var workBooted=false;
 function bootWork(){
   if(workBooted) return; workBooted=true;
+  if(!COLLAB){startLocal();return;}
   if(!CFG){setupScreen();return;}
   var sc=document.createElement("script");
   sc.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js";
@@ -4493,7 +4804,8 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
   drawerHead:drawerHead,X_BTN:X_BTN,CHECK_SVG:CHECK_SVG,closeSide:closeSide,openSettings:openSettings,
   renderSide:renderSide,renderSettings:renderSettings,scrim:scrimEl,
   typeEditor:typeEditor,kindChip:kindChip,orderBetween:orderBetween,byOrder:byOrder,find:find,setMode:setMode,
-  attachSwipe:attachSwipe,fitNavTitle:fitNavTitle,navDates:navDates,icsText:icsText,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,
+  attachSwipe:attachSwipe,fitNavTitle:fitNavTitle,navDates:navDates,icsText:icsText,
+  collab:COLLAB,systemNotifyHTML:systemNotifyHTML,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,
   push:{url:pushURL,key:pushKey,support:pushSupport,ask:askNotify,subscription:pushSubscription,error:pushError}};
 /* работа без сети и установка на главный экран (только на http/https) */
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){

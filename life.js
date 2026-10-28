@@ -1205,7 +1205,7 @@ function forgotPin(){
 /* всё Grid Life на этом устройстве: задачи, типы, файлы, настройки и PIN */
 function wipeAll(){
   /* сервер забывает устройство вместе с его напоминаниями */
-  if(L.meta.pushLife) lifeCall({life:"off",token:L.meta.deviceToken}).catch(function(){
+  if(pushLifeOn()) lifeCall({life:"off",token:L.meta.deviceToken}).catch(function(){
     K.flash("Напоминания на сервере не удалось выключить — нет связи. Уже отправленные придут без названия ещё до 60 дней.");});
   return Promise.all(["tasks","kinds","files","meta"].map(function(s){return write(s,[],true);})).then(function(){
     L.tasks=[]; L.kinds=[]; L.files=[]; L.meta={};
@@ -1310,7 +1310,7 @@ function titleShown(){var p=lp();return p.remindTitle===true||p.remindTitle!==fa
 var tickAt=Date.now();
 function remindTick(){
   var now=Date.now(),from=Math.max(tickAt,now-600000),granted=window.Notification&&Notification.permission==="granted"; tickAt=now;
-  if(!L.ready||L.meta.pushLife&&granted) return;
+  if(!L.ready||pushLifeOn()&&granted) return;
   var due=remindersBetween(from,now); if(!due.length) return;
   var x=due[0],show=titleShown(),title=show?x.it.t.title||"Без названия":"Grid Life";
   var body=(show?"":"Напоминание · ")+whenText(x.it,x.at)+(due.length>1?" · и ещё "+(due.length-1):"");
@@ -1338,12 +1338,14 @@ function lifeCall(body){
    сервер не может связать напоминания одной задачи между отправками.
    Без связи — отправим при следующем изменении или открытии Grid. */
 var syncT=null;
+/* push-напоминания есть только при совместной работе через сервер (collab) */
+function pushLifeOn(){return K.collab&&!!L.meta.pushLife;}
 function remindChanged(){
-  if(!L.meta.pushLife) return;
+  if(!pushLifeOn()) return;
   clearTimeout(syncT); syncT=setTimeout(function(){syncRemind().catch(function(){});},1500);
 }
 function syncRemind(force){
-  if(!L.ready||!L.meta.pushLife||!window.Notification||Notification.permission!=="granted") return Promise.resolve();
+  if(!L.ready||!pushLifeOn()||!window.Notification||Notification.permission!=="granted") return Promise.resolve();
   var now=Date.now(),list=remindersBetween(now,now+REMIND_DAYS*864e5).slice(0,300);
   return K.push.subscription(true).then(function(sub){
     var j=sub.toJSON(),sig=j.endpoint+"|"+list.map(function(x){return x.k+"@"+x.at;}).join(",");
@@ -1458,6 +1460,18 @@ function checkPushKey(){
   K.push.key().then(function(){L.pushKey="ok";},function(){L.pushKey="off";}).then(function(){K.renderSettings();});
 }
 function remindSetHTML(p){
+  var common=pick("remindMode","Напоминать",[["all","обо всех задачах"],["important","только о важных"],["manual","только о выбранных"],["off","не напоминать"]])+
+    (p.remindMode==="off"?"":pick("remindDefault","Напоминание по умолчанию",REMINDS)+
+      '<label class="opt"><span>Задачи на весь день — в</span><input class="in" type="time" data-lpref="remindAllDay" value="'+
+        esc(p.remindAllDay)+'" aria-label="Время напоминания о задачах на весь день"></label>'+
+      '<p class="small">Важные — с высоким и срочным приоритетом. В самой задаче напоминания можно поменять: '+
+        "добавить несколько, своё время или убрать. Пока Grid открыт, напоминает он сам.</p>");
+  /* без сервера: напоминает открытый Grid, а на закрытом — календарь телефона (файл .ics из задачи) */
+  if(!K.collab) return common+(p.remindMode==="off"?"":K.systemNotifyHTML()+
+    '<p class="small">Чтобы напомнило, когда Grid закрыт, в задаче нажмите «Добавить в календарь телефона» — '+
+      "календарь напомнит сам, даже без интернета.</p>"+
+    toggle('data-lpref="remindTitle"',titleShown(),"Показывать название задачи",
+      "Иначе в уведомлении будет только «Grid Life» и время. Если задан PIN, по умолчанию название скрыто."));
   var sup=K.push.support(),on=!!L.meta.pushLife&&sup==="ok"&&Notification.permission==="granted",push;
   checkPushKey();
   if(!K.push.url()||L.pushKey==="off")
@@ -1470,13 +1484,7 @@ function remindSetHTML(p){
       ?"Уведомления запрещены в настройках браузера или телефона — разрешите их для Grid, затем включите здесь."
       :"Придёт push-уведомление, даже если Grid закрыт.")+
     (on?'<div class="row"><button class="btn ghost" data-lpushtest="1">Прислать пробное</button></div>':"");
-  return pick("remindMode","Напоминать",[["all","обо всех задачах"],["important","только о важных"],["manual","только о выбранных"],["off","не напоминать"]])+
-    (p.remindMode==="off"?"":pick("remindDefault","Напоминание по умолчанию",REMINDS)+
-      '<label class="opt"><span>Задачи на весь день — в</span><input class="in" type="time" data-lpref="remindAllDay" value="'+
-        esc(p.remindAllDay)+'" aria-label="Время напоминания о задачах на весь день"></label>'+
-      '<p class="small">Важные — с высоким и срочным приоритетом. В самой задаче напоминания можно поменять: '+
-        "добавить несколько, своё время или убрать. Пока Grid открыт, напоминает он сам.</p>"+
-      push+
+  return common+(p.remindMode==="off"?"":push+
       '<p class="small">На сервер Grid уходят только время напоминания и случайный номер — без названия и описания задачи. '+
         "Название телефон подставляет сам из данных на этом устройстве.</p>"+
       toggle('data-lpref="remindTitle"',titleShown(),"Показывать название задачи",
@@ -1523,9 +1531,11 @@ function settingsHTML(){
         :'<p class="small">Вход по '+bioName()+" можно включить после того, как вы зададите PIN: он нужен как запасной способ.</p>")+
       toggle("data-lopenlife",openLife(),"Открывать приложение в Grid Life","Иначе Grid откроется там, где вы были в прошлый раз."))+
     sec("storage","Хранилище",
-      "<p>Задачи, типы и файлы Grid Life хранятся только на этом устройстве, в этом браузере. "+
+      (K.collab?"<p>Задачи, типы и файлы Grid Life хранятся только на этом устройстве, в этом браузере. "+
         "Вход не нужен, всё работает без интернета. На сервер ничего не отправляется — кроме времени напоминаний, "+
-        "если включить их на закрытом Grid.</p>"+
+        "если включить их на закрытом Grid.</p>"
+      :"<p>Все данные хранятся только на этом устройстве и никуда не отправляются. Сохраняйте резервную копию: "+
+        "при очистке браузера или смене устройства данные пропадут.</p>")+
       '<div class="meter-h"><span>Задачи и типы: '+K.fmtSize(dataSize)+" · файлы: "+K.fmtSize(filesSize)+"</span></div>"+
       (est&&est.quota?'<div class="meter" role="progressbar" aria-label="Занято места в браузере" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+
           pct+'"><i style="width:'+pct+'%"></i></div>'+

@@ -3,16 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="Grid Work — командные Kanban-доски с проектами, Гантом и календарём. Grid Life — личный календарь задач, который работает без интернета.">
+<meta name="description" content="Grid Work — Kanban-доски с проектами, Гантом и календарём. Grid Life — личный календарь задач. Всё работает на этом устройстве, без интернета.">
 <meta name="theme-color" content="#FFFFFF">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Grid</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/grid-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600&display=swap">
+<link rel="stylesheet" href="fonts/fonts.css">
 <link rel="stylesheet" href="life.css">
 <script src="grid.config.js"></script>
 <script>
@@ -736,6 +734,10 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .set{display:flex;flex-direction:column;gap:12px;font-size:13.5px;line-height:1.55}
 .set p{margin:0;color:var(--ink-2)}
 .set p.small{font-size:12.5px;color:var(--ink-3)}
+/* «О Grid»: подзаголовки конфиденциальности, условий и лицензий */
+.set .ab-h{margin:6px 0 -4px;font-size:13px;font-weight:600;color:var(--ink)}
+.set .ab-lic{margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.set .ab-lic a{color:var(--accent)}
 .choice{display:flex;flex-direction:column;gap:6px}
 .choice label{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-radius:var(--r-m);
   border:1px solid var(--line-2);cursor:pointer}
@@ -3762,16 +3764,33 @@ function feedbackInfo(){
   return "Grid, версия от "+versionDate()+"\nРежим: "+(S.store.kind==="supabase"?"база Supabase":COLLAB?"демо":"на этом устройстве")+
     "\nЭкран: "+screen.width+"×"+screen.height+"\nБраузер: "+navigator.userAgent;
 }
+/* шрифты лежат на сайте вместе с текстом лицензии (fonts/…/OFL.txt) */
+var FONT_LICENSES=[["Golos Text","golos-text"],["Unbounded","unbounded"],["JetBrains Mono","jetbrains-mono"]];
 function aboutHTML(){
   var to=feedbackTo(),label="Сообщить о проблеме или предложить идею";
   return setSection("about","О Grid",
-    "<p>Grid Work — доски для команды, Grid Life — личный календарь на этом устройстве.</p>"+
+    "<p>"+(COLLAB?"Grid Work — доски для команды, Grid Life — личный календарь на этом устройстве."
+      :"Grid Work — доски задач, Grid Life — личный календарь. Всё работает на этом устройстве.")+"</p>"+
     '<p class="small">Версия от '+esc(versionDate())+"</p>"+
     '<div class="row">'+(to
       ?'<a class="btn ghost" href="mailto:'+esc(to)+"?subject="+encodeURIComponent("Grid: проблема или идея")+
         "&body="+encodeURIComponent("Что случилось или чего не хватает:\n\n\n—\n"+feedbackInfo())+'">'+label+"</a>"
       :'<button class="btn ghost" data-feedback="1">'+label+"</button>")+"</div>"+
-    (to?"":'<p class="small">Адрес для писем пока не указан: кнопка скопирует сведения о версии, чтобы их можно было переслать.</p>'));
+    (to?'<p class="small">Откроется ваша почтовая программа — с письмом, в котором уже есть версия Grid и сведения о браузере.</p>'
+      :'<p class="small">Адрес для писем пока не указан: кнопка скопирует сведения о версии, чтобы их можно было переслать.</p>')+
+    (COLLAB?"":'<h4 class="ab-h">Конфиденциальность</h4>'+
+      "<p>Grid не собирает и не передаёт ваши данные: задачи, заметки, файлы и настройки хранятся только в браузере "+
+        "этого устройства. Сайт размещён на GitHub Pages — как любой хостинг, GitHub видит обычные сведения о посещении "+
+        "(адрес и браузер). Если вы напишете нам через «Сообщить о проблеме», мы увидим ваш адрес почты и используем "+
+        "его только для ответа.</p>"+
+      '<h4 class="ab-h">Условия</h4>'+
+      "<p>Grid бесплатный и предоставляется как есть, без гарантий. За сохранность данных отвечаете вы: они хранятся "+
+        "только на вашем устройстве, поэтому сохраняйте резервные копии.</p>")+
+    '<h4 class="ab-h">Лицензии</h4>'+
+    '<ul class="ab-lic">'+FONT_LICENSES.map(function(f){
+      return "<li>Шрифт "+f[0]+' — SIL Open Font License 1.1, <a href="fonts/'+f[1]+'/OFL.txt" target="_blank" rel="noopener">текст лицензии</a></li>';
+    }).join("")+"<li>Значки нарисованы для Grid. "+(COLLAB?"Для совместной работы загружается библиотека supabase-js (лицензия MIT).":
+      "Сторонних библиотек сайт не загружает.")+"</li></ul>");
 }
 function myFeed(){return S.feeds.filter(function(f){return f.userId===S.me;})[0]||null;}
 function feedURL(f){return CFG.url.replace(/\/+$/,"")+"/functions/v1/grid-calendar?token="+f.id;}

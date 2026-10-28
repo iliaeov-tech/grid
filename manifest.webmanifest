@@ -1,7 +1,7 @@
 {
   "name": "Grid",
   "short_name": "Grid",
-  "description": "Grid Work — командные доски, Grid Life — личный календарь задач",
+  "description": "Grid Work — доски задач, Grid Life — личный календарь задач",
   "lang": "ru",
   "start_url": "grid.html",
   "scope": "./",

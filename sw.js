@@ -1,9 +1,17 @@
 /* Grid — работа без сети.
-   Свои файлы: сначала сеть (чтобы обновления приходили сразу), без сети — копия.
-   Шрифты и библиотеки с CDN: сначала копия. Запросы к Supabase не трогаем. */
-var CACHE="grid-v1";
+   Всё, что нужно сайту, лежит на нём самом (и шрифты): сначала сеть, чтобы
+   обновления приходили сразу, без сети — копия. Чужие адреса не трогаем. */
+var CACHE="grid-v2";
+var FONTS=["golos-text/golos-text-cyrillic-400-normal","golos-text/golos-text-latin-400-normal",
+  "golos-text/golos-text-cyrillic-500-normal","golos-text/golos-text-latin-500-normal",
+  "golos-text/golos-text-cyrillic-600-normal","golos-text/golos-text-latin-600-normal",
+  "golos-text/golos-text-cyrillic-700-normal","golos-text/golos-text-latin-700-normal",
+  "unbounded/unbounded-cyrillic-600-normal","unbounded/unbounded-latin-600-normal",
+  "jetbrains-mono/jetbrains-mono-cyrillic-400-normal","jetbrains-mono/jetbrains-mono-latin-400-normal",
+  "jetbrains-mono/jetbrains-mono-cyrillic-500-normal","jetbrains-mono/jetbrains-mono-latin-500-normal"];
 var SHELL=["./","grid.html","grid.config.js","life.js","life.css","manifest.webmanifest",
-  "icons/grid-192.png","icons/grid-512.png","icons/apple-touch-icon.png"];
+  "icons/grid-192.png","icons/grid-512.png","icons/apple-touch-icon.png","fonts/fonts.css"]
+  .concat(FONTS.map(function(f){return "fonts/"+f+".woff2";}));
 
 self.addEventListener("install",function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(SHELL);}).then(function(){return self.skipWaiting();}));
@@ -26,12 +34,6 @@ self.addEventListener("fetch",function(e){
       return caches.match(req,{ignoreSearch:true}).then(function(hit){
         return hit||(req.mode==="navigate"?caches.match("grid.html"):Response.error());
       });
-    }));
-    return;
-  }
-  if(/(^|\.)fonts\.(googleapis|gstatic)\.com$|^cdn\.jsdelivr\.net$/.test(url.hostname)){
-    e.respondWith(caches.match(req).then(function(hit){
-      return hit||fetch(req).then(function(res){return keep(req,res);});
     }));
   }
 });

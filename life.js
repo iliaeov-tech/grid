@@ -24,7 +24,6 @@ var VIEWS=[{id:"month",label:"Месяц"},{id:"week",label:"Неделя"},{id:
 var WEEKDAYS=["пн","вт","ср","чт","пт","сб","вс"];
 var MONTHS_GEN=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
 var HH=48;                           /* высота часа в сетке дня и недели, px */
-var WEEK_MS=7*864e5;
 
 /* ═════════ даты ═════════ */
 function today(){return K.todayISO();}
@@ -66,10 +65,11 @@ function openDB(){
     r.onerror=function(){rej(r.error);};
   });
 }
+/* без «призраков» приватного окна Safari — см. idbAll в grid.html */
 function all(store){
   return new Promise(function(res,rej){
     var r=db.transaction(store).objectStore(store).getAll();
-    r.onsuccess=function(){res(r.result);}; r.onerror=function(){rej(r.error);};
+    r.onsuccess=function(){res(r.result.filter(function(x){return x!==undefined;}));}; r.onerror=function(){rej(r.error);};
   });
 }
 function write(store,recs,clear){
@@ -77,7 +77,7 @@ function write(store,recs,clear){
     var t=db.transaction(store,"readwrite"),os=t.objectStore(store);
     if(clear) os.clear();
     [].concat(recs).forEach(function(r){os.put(r);});
-    t.oncomplete=function(){res();}; t.onerror=t.onabort=function(){rej(t.error);};
+    t.oncomplete=function(){res();K.bkChanged();}; t.onerror=t.onabort=function(){rej(t.error);};
   });
 }
 function saved(p){
@@ -116,7 +116,7 @@ function setMeta(key,value){
    remindMode — о каких задачах напоминать, remindDefault — за сколько минут,
    remindAllDay — во сколько напоминать о задачах на весь день,
    remindTitle — показывать ли название в уведомлении (null — да, если нет PIN) */
-var LPREFS={view:"last",weekStart:1,h24:true,duration:0,overdue:"block",hidePastDone:false,backupEvery:"week",
+var LPREFS={view:"last",weekStart:1,h24:true,duration:0,overdue:"block",hidePastDone:false,
   remindMode:"all",remindDefault:0,remindAllDay:"09:00",remindTitle:null};
 function lp(){return Object.assign({},LPREFS,L.meta.prefs||{});}
 function setPref(k,v){var p=lp();p[k]=v;setMeta("prefs",p);remindChanged();}
@@ -444,19 +444,9 @@ function daySectionHTML(d,items){
     (items.length?items.map(function(i){return rowHTML(i,false);}).join("")
       :'<button class="lempty" data-lnew="'+d+'">Задач нет — нажмите, чтобы добавить</button>')+"</section>";
 }
-/* напоминание о копии — раз в неделю или в месяц, по настройке */
-function backupDue(){
-  var every=lp().backupEvery;
-  if(every==="never"||!live().length) return false;
-  var last=Math.max(L.meta.lastBackupAt||0,L.meta.backupSnooze||0,L.meta.firstUseAt||0);
-  return Date.now()-last>(every==="month"?30*864e5:WEEK_MS);
-}
 function listHTML(){
-  var t=today(),h="",od=overdue(),to=addDays(t,L.listDays-1),by={};
-  if(backupDue()) h+='<div class="lbanner" role="status"><span><b>Сохраните резервную копию.</b> Данные Grid Life хранятся '+
-    "только на этом устройстве — копия пригодится, если с ним что-то случится.</span>"+
-    '<div class="row"><button class="btn" data-lexport="1">Сохранить копию</button>'+
-    '<button class="btn ghost" data-lsnooze="1">Позже</button></div></div>';
+  var t=today(),h="",od=overdue(),to=addDays(t,L.listDays-1),by={},copy=K.copyNoticeHTML();
+  if(copy) h+='<div class="lbanner" role="status">'+copy+"</div>";
   if(od.length) h+='<section class="lsec od" aria-label="Просрочено"><div class="lsec-h"><h3>Просрочено</h3>'+
       '<span class="n">'+od.length+'</span><span class="sp"></span>'+
       '<button class="btn ghost sm" data-lmoveall="1">Всё на сегодня</button></div>'+
@@ -951,55 +941,46 @@ function blobToBase64(b){
     r.readAsDataURL(b);
   });
 }
-/* в копию идут и настройки, кроме PIN: копию открывают и на другом устройстве */
+/* Копию и снимки собирает общий модуль Grid (grid.html), Grid Life отдаёт и
+   принимает свои данные. В копию идут и настройки, кроме PIN: копию открывают
+   и на другом устройстве. */
 var BACKUP_META=["hidden","prefs","kindEdits","offKinds"];
-function exportBackup(){
-  var files=L.files.filter(function(f){return !f.deletedAt&&f.blob;});
-  return Promise.all(files.map(function(f){
-    return blobToBase64(f.blob).then(function(data){
-      var o=Object.assign({},f); delete o.blob; o.data=data; return o;});
-  })).then(function(fs){
-    var settings={};
-    BACKUP_META.forEach(function(k){if(L.meta[k]!=null) settings[k]=L.meta[k];});
-    var dump={app:"grid-life",version:1,exportedAt:new Date().toISOString(),
-      tasks:live(),kinds:ownKinds(),files:fs,settings:settings};
-    var a=document.createElement("a");
-    a.href=URL.createObjectURL(new Blob([JSON.stringify(dump)],{type:"application/json"}));
-    a.download="grid-life-"+today()+".json";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
-    setMeta("lastBackupAt",Date.now());
-    render(); K.renderSettings();
-    K.flash("Копия сохранена: "+a.download);
-    return true;
-  },function(e){K.flash("Не удалось собрать копию: "+(e&&e.message||""));return false;});
+function used(){try{return L.ready||localStorage.getItem("grid.life.used")==="1";}catch(e){return L.ready;}}
+function settingsCopy(){
+  var s={}; BACKUP_META.forEach(function(k){if(L.meta[k]!=null) s[k]=L.meta[k];}); return s;
 }
-function importBackup(){
-  filePick.value=""; filePick.accept="application/json,.json";
-  filePick.onchange=function(){
-    filePick.accept="";
-    var f=filePick.files&&filePick.files[0]; if(!f) return;
-    f.text().then(function(txt){
-      var d=JSON.parse(txt);
-      if(!d||d.app!=="grid-life"||!Array.isArray(d.tasks)) throw new Error("это не резервная копия Grid Life");
-      var when=d.exportedAt?new Date(d.exportedAt).toLocaleString("ru-RU"):"неизвестной даты";
-      if(!confirm("Восстановить копию от "+when+"? Задачи Grid Life на этом устройстве заменятся задачами из копии ("+
-        d.tasks.length+").")) return;
-      var files=(d.files||[]).map(function(x){
-        var bin=atob(x.data||""),u=new Uint8Array(bin.length);
-        for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
-        var o=Object.assign({},x); delete o.data; o.blob=new Blob([u],{type:x.mime||"application/octet-stream"}); return o;
-      });
-      return Promise.all([write("tasks",d.tasks,true),write("kinds",d.kinds||[],true),write("files",files,true)]).then(function(){
-        L.tasks=d.tasks; L.kinds=d.kinds||[]; L.files=files;
-        BACKUP_META.forEach(function(k){if(d.settings&&d.settings[k]!=null) setMeta(k,d.settings[k]);});
-        setMeta("lastBackupAt",Date.now());
-        render(); K.renderSide(); K.renderSettings(); remindChanged();
-        K.flash("Копия восстановлена: задач — "+d.tasks.length);
-      });
-    }).catch(function(e){K.flash("Не удалось восстановить: "+(e&&e.message||"файл повреждён"));});
-  };
-  filePick.click();
+/* всё как есть, с корзиной и файлами (Blob) — для снимка; null, если Grid Life здесь не открывали */
+function rawData(){
+  if(!used()) return Promise.resolve(null);
+  return ready().then(function(){return {tasks:L.tasks.slice(),kinds:L.kinds.slice(),files:L.files.slice(),settings:settingsCopy()};});
+}
+/* часть общей копии: живые задачи, свои типы, файлы в base64 */
+function copyPart(){
+  if(!used()) return Promise.resolve(null);
+  return ready().then(function(){
+    return Promise.all(L.files.filter(function(f){return !f.deletedAt&&f.blob;}).map(function(f){
+      return blobToBase64(f.blob).then(function(data){var o=Object.assign({},f); delete o.blob; o.data=data; return o;});
+    }));
+  }).then(function(fs){
+    return {app:"grid-life",version:1,exportedAt:new Date().toISOString(),tasks:live(),kinds:ownKinds(),files:fs,settings:settingsCopy()};
+  });
+}
+/* заменить данные Grid Life — из снимка или из копии */
+function replaceData(d){
+  return ready().then(function(){
+    return Promise.all([write("tasks",d.tasks,true),write("kinds",d.kinds||[],true),write("files",d.files||[],true)]);
+  }).then(function(){
+    L.tasks=d.tasks; L.kinds=d.kinds||[]; L.files=d.files||[];
+    BACKUP_META.forEach(function(k){if(d.settings&&d.settings[k]!=null) setMeta(k,d.settings[k]);});
+    render(); K.renderSide(); K.renderSettings(); remindChanged();
+  });
+}
+function fromCopy(d){
+  return replaceData({tasks:d.tasks,kinds:d.kinds,settings:d.settings,files:(d.files||[]).map(function(x){
+    var bin=atob(x.data||""),u=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+    var o=Object.assign({},x); delete o.data; o.blob=new Blob([u],{type:x.mime||"application/octet-stream"}); return o;
+  })});
 }
 
 /* ═════════ боковая панель и настройки ═════════ */
@@ -1173,6 +1154,26 @@ function hideLock(){
   inerted.forEach(function(el){el.inert=false;}); inerted=[];
 }
 function unlock(){L.unlocked=true;lockFails=0;hideLock();render();openPending();}
+/* Копию сохраняют и из Grid Work, а Grid Life закрыт PIN: без него задачи в
+   копию не попадут. Ответ: true — с Grid Life, false — без него, null — отмена.
+   Попытки ограничены, как на экране PIN. */
+function copyAllowed(){
+  if(!used()) return Promise.resolve(true);
+  return ready().then(function(){
+    if(!L.meta.pin||L.unlocked) return true;
+    if(lockFails>=5){K.flash("Слишком много попыток PIN. Подождите 30 секунд.");return null;}
+    return dialog("PIN Grid Life","В копию войдут задачи Grid Life — введите PIN.",
+      [["skip","Сохранить без Grid Life"],["","Отмена"]],true).then(function(v){
+      if(!v||v==="skip") return v?false:null;
+      return hashPin(v,L.meta.pin.salt).then(function(h){
+        if(h===L.meta.pin.hash){lockFails=0;return true;}
+        if(++lockFails>=5) setTimeout(function(){lockFails=0;},30000);
+        K.flash("Неверный PIN — копия не сохранена");
+        return null;
+      });
+    });
+  });
+}
 /* задача из напоминания открывается, когда данные загружены и PIN введён */
 function openPending(){
   var k=L.openKey;
@@ -1196,7 +1197,7 @@ function forgotPin(){
     [["reset","Сбросить PIN и удалить данные","danger"],["","Отмена"]]).then(function(v){
     if(v!=="reset") return;
     return dialog("Точно удалить все данные Grid Life?","Отменить будет нельзя.",[["yes","Удалить всё","danger"],["","Отмена"]]).then(function(y){
-      if(y==="yes") return wipeAll().then(function(){unlock();K.flash("PIN сброшен, данные Grid Life удалены");});
+      if(y==="yes") return wipeAll().then(function(ok){unlock();if(ok) K.flash("PIN сброшен, данные Grid Life удалены");});
     });
   });
 }
@@ -1212,17 +1213,20 @@ function wipeAll(){
     setMeta("firstUseAt",Date.now());
     try{localStorage.removeItem("grid.openLife");localStorage.removeItem("grid.life.view");}catch(e){}
     L.view="list"; render(); K.renderSide(); K.renderSettings();
+    /* и из снимков: данные уже удалены, а снимки — отдельно, о сбое говорим прямо. Ответ — удалось ли всё */
+    return K.snapDropLife().then(function(){return true;},function(e){
+      K.flash("Grid Life удалён, но из снимков — нет: "+((e&&e.message)||"ошибка хранилища")+". Повторите удаление.");return false;});
   });
 }
 function askWipe(){
-  dialog("Удалить все данные Grid Life","Задачи, типы, файлы и настройки Grid Life на этом устройстве удалятся. Grid Work это не затронет. "+
-    "Сначала сохранить резервную копию?",
+  dialog("Удалить все данные Grid Life","Задачи, типы, файлы, настройки и снимки Grid Life на этом устройстве удалятся. "+
+    "Grid Work это не затронет. Сначала сохранить резервную копию?",
     [["copy","Сохранить копию и продолжить"],["go","Удалить без копии","danger"],["","Отмена"]]).then(function(v){
     if(!v) return;
-    return (v==="copy"?exportBackup():Promise.resolve(true)).then(function(ok){
+    return (v==="copy"?K.saveCopy():Promise.resolve(true)).then(function(ok){
       if(!ok) return;                     /* копия не сохранилась — ничего не удаляем */
       return dialog("Точно удалить все данные Grid Life?","Отменить будет нельзя.",[["yes","Удалить всё","danger"],["","Отмена"]]);
-    }).then(function(y){if(y==="yes") return wipeAll().then(function(){K.flash("Данные Grid Life удалены");});});
+    }).then(function(y){if(y==="yes") return wipeAll().then(function(ok){if(ok) K.flash("Данные Grid Life удалены");});});
   });
 }
 var CLEAN=[[30,"месяц"],[90,"три месяца"],[180,"полгода"],[365,"год"]];
@@ -1491,7 +1495,7 @@ function remindSetHTML(p){
         "Иначе в уведомлении будет только «Grid Life» и время. Если задан PIN, по умолчанию название скрыто."));
 }
 function settingsHTML(){
-  var p=lp(),last=L.meta.lastBackupAt,off=offKinds(),est=L.estimate;
+  var p=lp(),off=offKinds(),est=L.estimate;
   var dataSize=JSON.stringify(live()).length+JSON.stringify(ownKinds()).length;
   var filesSize=L.files.filter(function(f){return !f.deletedAt;}).reduce(function(s,f){return s+(f.size||0);},0);
   var pct=est&&est.quota?Math.min(100,Math.round(est.usage/est.quota*100)):0;
@@ -1545,15 +1549,12 @@ function settingsHTML(){
         :L.persisted===false?'<p class="small">Браузер пока не обещал хранить данные постоянно: при нехватке места он может '+
           "их очистить. Сохраняйте резервные копии.</p>"+
           '<div class="row"><button class="btn ghost" data-lpersist="1">Попросить постоянное хранение</button></div>':"")+
-      "<p><b>Резервная копия.</b> "+(last?"Последняя — "+esc(K.fmtWhen(last))+".":"Копий ещё не было.")+
-        " Один файл со всеми задачами, типами, файлами и настройками — его можно перенести на другое устройство.</p>"+
-      '<div class="row"><button class="btn" data-lexport="1">Сохранить копию</button>'+
-        '<button class="btn ghost" data-limport="1">Восстановить из файла</button></div>'+
-      pick("backupEvery","Напоминать о копии",[["week","раз в неделю"],["month","раз в месяц"],["never","не напоминать"]])+
       '<div class="lclean"><span>Удалить выполненные задачи старше, чем</span><div class="row"><select class="in" data-lclean="1" aria-label="Срок">'+
         CLEAN.map(function(c){return '<option value="'+c[0]+'">'+c[1]+"</option>";}).join("")+"</select>"+
         '<button class="btn ghost" data-lcleango="1">Удалить</button></div></div>'+
       '<div class="row"><button class="btn danger" data-lwipe="1">Удалить все данные Grid Life</button></div>')+
+    sec("backup","Резервная копия",K.copyBody())+
+    sec("snaps","Снимки",K.snapsBody("life"))+
     sec("install","На главный экран",
       "<p>Grid можно установить как приложение: он откроется с главного экрана и без интернета.</p>"+
       (installEvt?'<div class="row"><button class="btn" data-linstall="1">Установить</button></div>'
@@ -1594,8 +1595,6 @@ function onMainClick(e){
   if((b=t.closest("[data-lnew]"))){newTask({date:b.dataset.lnew==="none"?"":b.dataset.lnew});return;}
   if(t.closest("[data-lfab]")){newTask({date:fabDate()});return;}
   if(t.closest("[data-lmore]")){L.listDays+=30;render();return;}
-  if(t.closest("[data-lexport]")){exportBackup();return;}
-  if(t.closest("[data-lsnooze]")){setMeta("backupSnooze",Date.now());render();return;}
   if((b=t.closest("[data-lgoto]"))){if(L.view==="week")setView("day",b.dataset.lgoto);return;}
   if((b=t.closest("[data-lad]"))){newTask({date:b.dataset.lad});return;}
   if((b=t.closest("[data-lslot]"))){
@@ -1621,9 +1620,7 @@ function onSideClick(e){
 function onSettingsClick(e){
   if(!isLife()) return;
   var t=e.target,b;
-  if(t.closest("[data-lexport]")) exportBackup();
-  else if(t.closest("[data-limport]")) importBackup();
-  else if(t.closest("[data-lpersist]")){persistAsked=false;askPersist();}
+  if(t.closest("[data-lpersist]")){persistAsked=false;askPersist();}
   else if((b=t.closest("[data-lkedit]"))) editKind(b,kindOf(b.dataset.lkedit));
   else if((b=t.closest("[data-lknew]"))) editKind(b,null);
   else if((b=t.closest("[data-lpin]"))){
@@ -1720,6 +1717,11 @@ window.GridLife={
   openKey:function(key){L.openKey=key;openPending();},
   escape:function(){return closePanel();},
   sideHTML:sideHTML,
-  settingsHTML:settingsHTML
+  settingsHTML:settingsHTML,
+  /* копия и снимки (grid.html) */
+  raw:rawData, load:replaceData, copyPart:copyPart, fromCopy:fromCopy, copyAllowed:copyAllowed,
+  hasData:function(){return L.ready&&live().length>0;},
+  refresh:function(){render();},
+  dialog:dialog
 };
 })();

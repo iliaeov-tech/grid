@@ -735,7 +735,12 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .set p{margin:0;color:var(--ink-2)}
 .set p.small{font-size:12.5px;color:var(--ink-3)}
 /* «О Grid»: подзаголовки конфиденциальности, условий и лицензий */
-.set .ab-h{margin:6px 0 -4px;font-size:13px;font-weight:600;color:var(--ink)}
+.set h4{margin:6px 0 -4px;font-size:13px;font-weight:600;color:var(--ink)}
+.set .snaps{display:flex;flex-direction:column}
+.set .snap{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line);
+  font-size:13px;color:var(--ink-2)}
+.set .snap b{font-weight:600;color:var(--ink)}
+.set .snap .btn{flex:none;min-height:34px;padding:6px 12px;font-size:12.5px}
 .set .ab-lic{margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
 .set .ab-lic a{color:var(--accent)}
 .set .ab-tg{align-items:center;column-gap:12px}
@@ -1184,7 +1189,7 @@ function me(){return person(S.me);}
    они одинаковы на всех устройствах человека */
 /* push: какие события присылать, тихие часы и пояс (по нему сервер считает 9:00 и тихие часы) */
 var PREFS={view:"board",hideDone:false,density:"normal",weekStart:1,dateFmt:"short",
-  pushDue:true,pushAssigned:true,pushComment:true,quiet:true,quietFrom:"22:00",quietTo:"08:00",tz:"",backupEvery:"week"};
+  pushDue:true,pushAssigned:true,pushComment:true,quiet:true,quietFrom:"22:00",quietTo:"08:00",tz:""};
 function prefs(){var s=(me()||{}).settings;return Object.assign({},PREFS,s&&typeof s==="object"?s:{});}
 /* вид и «скрывать выполненные» действуют с открытия Grid Work */
 function applyPrefs(){
@@ -1406,6 +1411,10 @@ function supaStore(sb){
    localStorage, а если их нет — кладётся пример. */
 var WORK_DB="grid-work",OLD_KEY="grid.board.v4";
 function idbDone(r){return new Promise(function(res,rej){r.onsuccess=function(){res(r.result);};r.onerror=function(){rej(r.error);};});}
+/* Все записи хранилища. В приватном окне Safari запись, которую прервала
+   перезагрузка страницы, оставляет «призраков» — пустые (undefined) строки
+   на месте новых ключей; таких записей не было, сохранённые раньше целы. */
+function idbAll(os){return idbDone(os.getAll()).then(function(rows){return rows.filter(function(x){return x!==undefined;});});}
 function openWorkDB(){
   if(!window.indexedDB) return Promise.reject(new Error("браузер не поддерживает хранение данных"));
   var r=indexedDB.open(WORK_DB,1);
@@ -1459,7 +1468,7 @@ function localStore(){
   }
   var ready=openWorkDB().then(function(d){
     db=d;
-    return Promise.all(COLLS.concat(["meta"]).map(function(c){return idbDone(db.transaction(c).objectStore(c).getAll());}));
+    return Promise.all(COLLS.concat(["meta"]).map(function(c){return idbAll(db.transaction(c).objectStore(c));}));
   }).then(function(r){
     COLLS.forEach(function(c,i){data[c]=r[i];});
     r[COLLS.length].forEach(function(x){meta[x.key]=x.value;});
@@ -1495,15 +1504,15 @@ function localStore(){
       return saved(tx(Object.keys(gone),function(t){
         Object.keys(gone).forEach(function(k){gone[k].forEach(function(x){t.objectStore(k).delete(x);});});}));
     },
-    /* «Очистить и начать с нуля»: остаётся только профиль хозяина устройства */
-    reset:function(){
-      var mine=find(data.profiles,meta.me);
-      COLLS.forEach(function(c){data[c]=[];});
-      if(mine) data.profiles=[mine];
+    /* все коллекции разом — из снимка; meta (хозяин устройства) остаётся */
+    replace:function(d){
+      COLLS.forEach(function(c){data[c]=(d[c]||[]).slice();});
       meta.sample=false;
       COLLS.forEach(emit);
       return saved(writeAll(data,meta));
-    }
+    },
+    /* «Очистить и начать с нуля»: остаётся только профиль хозяина устройства */
+    reset:function(){var mine=find(data.profiles,meta.me);return this.replace({profiles:mine?[mine]:[]});}
   };
 }
 function starter(){
@@ -3380,43 +3389,13 @@ function fileData(f){
     return new Promise(function(res){var fr=new FileReader();fr.onload=function(){res(fr.result);};fr.readAsDataURL(r.data);});
   });
 }
-function exportBackup(){
-  var d=backupData(S.bk.all),n=0;
-  if(!d.projects.length){flash("Нет проектов для копии");return;}
-  if(!S.bk.files) d.files=[];
-  d.files.reduce(function(p,f){
-    return p.then(function(){
-      return fileData(f).then(function(x){f.data=x;delete f.blob;flash("Собираем файлы: "+(++n)+" из "+d.files.length);});
-    });
-  },Promise.resolve()).then(function(){
-    var name="Grid Work — "+fileName(S.bk.all?"все проекты":d.projects[0].name,"проект")+" — "+todayISO()+".json";
-    saveBlob(new Blob([JSON.stringify(d)],{type:"application/json"}),name);
-    flash("Копия сохранена: "+name);
-    /* на устройстве помним, когда сохраняли, — для напоминания о копии */
-    if(S.store.setMeta) S.store.setMeta("lastBackupAt",Date.now()).then(function(){renderNotice();renderSettings();});
-  }).catch(function(e){flash("Копия не собралась: "+((e&&e.message)||"нет связи с хранилищем"));});
-}
-function pickBackup(){
-  filePick.value=""; filePick.accept=".json,application/json";
-  filePick.onchange=function(){var f=filePick.files&&filePick.files[0];filePick.accept="";if(f) readBackup(f);};
-  filePick.click();
-}
-function readBackup(file){
-  var fr=new FileReader();
-  fr.onload=function(){
-    var d=null; try{d=JSON.parse(fr.result);}catch(e){}
-    if(!d||d.app!==BACKUP_APP||!Array.isArray(d.projects)||!d.projects.length){flash("Это не резервная копия Grid Work");return;}
-    var nf=(d.files||[]).filter(function(f){return f.data;}).length;
-    if(!confirm("Копия от "+fmtWhen(d.exportedAt)+": проектов — "+d.projects.length+", задач — "+(d.cards||[]).length+
-      ", файлов — "+nf+".\n\nОни добавятся как новые проекты, то, что уже есть, не изменится. "+
-      (COLLAB?"Вы станете владельцем, команда из копии получит приглашения. ":"Ответственные из копии появятся в списке участников. ")+
-      "Восстановить?")) return;
-    w(restoreBackup(d).then(function(ids){
-      closeSettings(); switchProject(ids[0]);
-      flash("Восстановлено проектов: "+ids.length);
-    }));
-  };
-  fr.readAsText(file);
+/* часть Grid Work для общей копии: все проекты с файлами (base64) */
+function workCopyPart(){
+  var d=backupData(true);
+  if(!d.projects.length) return Promise.resolve(null);
+  return d.files.reduce(function(p,f){
+    return p.then(function(){return fileData(f).then(function(x){f.data=x;delete f.blob;});});
+  },Promise.resolve()).then(function(){return d;});
 }
 function restoreBackup(d){
   var map={},mine=String(S.email||(me()||{}).email||"").toLowerCase(),names=liveProjects().map(function(p){return p.name;});
@@ -3497,9 +3476,371 @@ function restoreBackup(d){
   }).then(function(){return created;});
 }
 
+/* ═════════ копия, автокопии и снимки: Grid Work и Grid Life вместе ═════════ */
+/* На сервер ничего не уходит.
+   Копия — один файл JSON с обоими режимами (части — те же, что у прежних
+   отдельных копий, и старые файлы тоже восстанавливаются): «Сохранить копию»
+   (на телефоне — меню «Поделиться»), автокопия в выбранную папку (Chrome и
+   Edge на компьютере: после изменений, не чаще раза в 10 минут, последние 7).
+   Снимки — раз в день при открытии, последние 7, в IndexedDB grid-backup;
+   спасают от ошибок, но лежат там же, где данные. Файл вложения в снимках
+   хранится один раз (blobs, ключ w:id или l:id), сколько бы снимков его ни помнили.
+   С совместной работой Grid Work живёт на сервере — в снимки и автокопии
+   попадает только Grid Life. */
+var COPY_APP="grid",KEEP=7,FOLDER_EVERY=10*60e3;
+var FOLDER_FILE=/^Grid — копия — \d{4}-\d{2}-\d{2} \d{2}-\d{2}\.json$/;
+var FOLDER_OK=typeof window.showDirectoryPicker==="function";
+var SHARE_OK=(function(){
+  try{return matchMedia("(pointer: coarse)").matches&&!!navigator.canShare&&
+    navigator.canShare({files:[new File(["{}"],"grid.json",{type:"application/json"})]});}catch(e){return false;}
+})();
+var BK={db:null,meta:{},ver:0,prep:null,prepTimer:0,timer:0,perm:"",want:false,later:false};
+function bkDB(){
+  if(!BK.dbP) BK.dbP=new Promise(function(res,rej){
+    if(!window.indexedDB){rej(new Error("браузер не поддерживает хранение данных"));return;}
+    var r=indexedDB.open("grid-backup",1);
+    r.onupgradeneeded=function(){
+      var d=r.result;
+      d.createObjectStore("snaps",{keyPath:"id"}); d.createObjectStore("blobs",{keyPath:"key"}); d.createObjectStore("meta",{keyPath:"key"});
+    };
+    r.onsuccess=function(){res(r.result);}; r.onerror=function(){rej(r.error);};
+  }).then(function(db){
+    BK.db=db;
+    return idbAll(db.transaction("meta").objectStore("meta"));
+  }).then(function(rows){rows.forEach(function(x){BK.meta[x.key]=x.value;});})
+    .catch(function(e){BK.dbP=null;throw e;});   /* не открылось — в следующий раз пробуем снова */
+  return BK.dbP;
+}
+function bkTx(stores,fn){
+  return new Promise(function(res,rej){
+    var t=BK.db.transaction(stores,"readwrite"); fn(t);
+    t.oncomplete=function(){res();}; t.onerror=t.onabort=function(){rej(t.error);};
+  });
+}
+function bkSet(k,v){BK.meta[k]=v;return bkTx(["meta"],function(t){t.objectStore("meta").put({key:k,value:v});});}
+function bkHash(s){
+  var h=0x811c9dc5;
+  for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
+  return (h>>>0).toString(36)+"."+s.length;
+}
+function folder(){return FOLDER_OK&&BK.meta.dir||null;}
+function bkRefresh(){renderNotice();GridLife.refresh();renderSettings();}
+/* любая правка в Grid Work или Grid Life */
+function bkChanged(){BK.ver++;if(BK.db&&folder()) scheduleFolder();}
+
+/* что сейчас на устройстве: строки без файлов, файлы отдельно (Blob) */
+function bkState(){
+  return GridLife.raw().then(function(life){
+    var work=null,blobs={};
+    function strip(pre){return function(r){
+      if(!r.blob) return r;
+      blobs[pre+r.id]=r.blob; var o=Object.assign({},r); delete o.blob; return o;};}
+    if(!COLLAB&&S.store&&S.store.kind==="local"){
+      work={}; COLLS.forEach(function(c){work[c]=(S[c]||[]).map(strip("w:"));});
+    }
+    if(life) life.files=life.files.map(strip("l:"));
+    function part(rows,pre){
+      if(!rows) return {sig:"",size:0};
+      var json=JSON.stringify(rows);
+      return {sig:bkHash(json),size:Object.keys(blobs).reduce(function(s,k){return s+(k.indexOf(pre)===0?blobs[k].size:0);},json.length)};
+    }
+    var pw=part(work,"w:"),pl=part(life,"l:");
+    return {work:work,life:life,blobs:blobs,sig:{work:pw.sig,life:pl.sig},size:{work:pw.size,life:pl.size}};
+  });
+}
+
+/* ── копия ── */
+/* auto — автокопия в папку; noLife — без Grid Life (PIN не ввели) */
+function buildCopy(auto,noLife){
+  var ver=BK.ver;
+  return Promise.all([auto&&COLLAB?null:workCopyPart(),noLife?null:GridLife.copyPart()]).then(function(r){
+    if(!r[0]&&!r[1]) throw new Error("в Grid пока нет данных");
+    return {ver:ver,name:"Grid — копия — "+todayISO()+".json",
+      json:JSON.stringify({app:COPY_APP,version:1,exportedAt:Date.now(),work:r[0],life:r[1]})};
+  });
+}
+/* Safari открывает «Поделиться» только прямо из нажатия — копию для него собираем заранее */
+function prepCopy(){
+  if(!SHARE_OK||BK.prep&&BK.prep.ver===BK.ver) return;
+  clearTimeout(BK.prepTimer);
+  BK.prepTimer=setTimeout(function(){
+    if(BK.prep&&BK.prep.ver===BK.ver) return;
+    BK.prep={ver:BK.ver};
+    buildCopy().then(function(c){if(BK.prep&&BK.prep.ver===c.ver) BK.prep=c;},function(){BK.prep=null;});
+  },1500);
+}
+/* «Сохранить копию»: на телефоне — меню «Поделиться», иначе — скачивание.
+   Ответ — true, если копия сохранена */
+function saveCopy(){
+  return GridLife.copyAllowed().then(function(life){
+    if(life===null) return false;
+    var c=life&&BK.prep&&BK.prep.ver===BK.ver&&BK.prep.json?BK.prep:null;
+    if(c) return deliverCopy(c);
+    flash("Собираем копию…");
+    return buildCopy(false,!life).then(function(c){if(SHARE_OK&&life) BK.prep=c;return deliverCopy(c);},
+      function(e){flash("Копия не собралась: "+((e&&e.message)||"нет связи с хранилищем"));return false;});
+  });
+}
+function deliverCopy(c){
+  var file=new File([c.json],c.name,{type:"application/json"});
+  if(!SHARE_OK){saveBlob(file,c.name);return copySaved(c.name);}
+  return navigator.share({files:[file],title:c.name}).then(function(){return copySaved(c.name);},function(e){
+    if(e&&e.name==="AbortError") return false;
+    if(e&&e.name==="NotAllowedError"){flash("Копия готова — нажмите «Сохранить копию» ещё раз");return false;}
+    saveBlob(file,c.name); return copySaved(c.name);
+  });
+}
+function copySaved(name){
+  return bkDB().then(function(){return bkSet("lastCopyAt",Date.now());}).then(function(){
+    flash("Копия сохранена: "+name); bkRefresh(); return true;
+  });
+}
+function pickCopy(){
+  filePick.value=""; filePick.accept=".json,application/json";
+  filePick.onchange=function(){
+    var f=filePick.files&&filePick.files[0]; filePick.accept="";
+    if(f) f.text().then(readCopy).catch(function(e){flash("Не удалось восстановить: "+((e&&e.message)||"файл повреждён"));});
+  };
+  filePick.click();
+}
+/* общая копия или прежняя отдельная копия Grid Work либо Grid Life */
+function readCopy(txt){
+  var d=null; try{d=JSON.parse(txt);}catch(e){}
+  var wk=d&&(d.app===COPY_APP?d.work:d.app===BACKUP_APP?d:null),lf=d&&(d.app===COPY_APP?d.life:d.app==="grid-life"?d:null);
+  if(wk&&!(Array.isArray(wk.projects)&&wk.projects.length)) wk=null;
+  if(lf&&!Array.isArray(lf.tasks)) lf=null;
+  if(!wk&&!lf){flash("Это не резервная копия Grid");return;}
+  var text=[];
+  if(wk) text.push("Grid Work: проектов — "+wk.projects.length+", задач — "+(wk.cards||[]).length+", файлов — "+
+    (wk.files||[]).filter(function(f){return f.data;}).length+". Они добавятся как новые проекты, то, что уже есть, не изменится."+
+    (COLLAB?" Вы станете их владельцем, команда из копии получит приглашения.":""));
+  if(lf) text.push("Grid Life: задач — "+lf.tasks.length+". Они заменят задачи Grid Life на этом устройстве.");
+  return GridLife.dialog("Восстановить копию от "+fmtWhen(d.exportedAt)+"?",text.join(" "),wk&&lf
+      ?[["all","Восстановить всё","main"],["work","Только Grid Work"],["life","Только Grid Life"],["","Отмена"]]
+      :[[wk?"work":"life","Восстановить","main"],["","Отмена"]]).then(function(v){
+    if(!v) return;
+    var p=Promise.resolve(),done=[];
+    if(lf&&v!=="work") p=p.then(function(){return GridLife.fromCopy(lf);}).then(function(){done.push("Grid Life");});
+    if(wk&&v!=="life") p=p.then(function(){return restoreBackup(wk);}).then(function(ids){switchProject(ids[0]);done.push("Grid Work");});
+    return w(p.then(function(){closeSettings();flash("Восстановлено из копии: "+done.join(" и "));}));
+  });
+}
+
+/* ── автокопии в папку ── */
+function pickFolder(){
+  window.showDirectoryPicker({id:"grid-copies",mode:"readwrite"}).then(function(h){
+    BK.perm="granted";
+    return bkSet("dir",h).then(function(){return bkSet("folderSig","");}).then(writeFolder);
+  },function(e){if(!e||e.name!=="AbortError") flash("Папку выбрать не удалось: "+((e&&e.message)||""));}).then(bkRefresh);
+}
+function folderOff(){
+  clearTimeout(BK.timer); BK.timer=0; BK.want=false; delete BK.meta.dir;
+  bkTx(["meta"],function(t){t.objectStore("meta").delete("dir");}).then(bkRefresh);
+}
+function allowFolder(){
+  folder().requestPermission({mode:"readwrite"}).then(function(p){BK.perm=p;if(p==="granted") return writeFolder();}).then(bkRefresh);
+}
+/* после изменений — не чаще раза в 10 минут */
+function scheduleFolder(){
+  if(BK.timer) return;
+  BK.timer=setTimeout(function(){BK.timer=0;writeFolder().then(bkRefresh);},
+    Math.max(5e3,(BK.meta.folderAt||0)+FOLDER_EVERY-Date.now()));
+}
+function writeFolder(){
+  var dir=folder(); if(!dir) return Promise.resolve();
+  return bkState().then(function(st){
+    var sig=st.sig.work+"|"+st.sig.life;
+    if(sig===BK.meta.folderSig){BK.want=false;return;}
+    return dir.queryPermission({mode:"readwrite"}).then(function(p){
+      BK.perm=p; BK.want=p!=="granted";
+      if(BK.want) return;
+      var d=new Date(),hm=String(d.getHours()).padStart(2,"0")+"-"+String(d.getMinutes()).padStart(2,"0"),json;
+      return buildCopy(true).then(function(c){
+        json=c.json;
+        return dir.getFileHandle("Grid — копия — "+todayISO()+" "+hm+".json",{create:true});
+      }).then(function(fh){return fh.createWritable();}).then(function(out){
+        return out.write(json).then(function(){return out.close();});
+      }).then(function(){return pruneFolder(dir);}).then(function(){
+        return Promise.all([bkSet("folderAt",Date.now()),bkSet("folderSig",sig)]);
+      });
+    });
+  }).catch(function(e){flash("Автокопия в папку не сохранилась: "+((e&&e.message)||""));});
+}
+function pruneFolder(dir){
+  var names=[],it=dir.keys();
+  function next(){return it.next().then(function(r){
+    if(r.done) return;
+    if(FOLDER_FILE.test(r.value)) names.push(r.value);
+    return next();
+  });}
+  return next().then(function(){
+    return Promise.all(names.sort().reverse().slice(KEEP).map(function(n){return dir.removeEntry(n);}));
+  });
+}
+
+/* ── снимки ── */
+function snapWhen(ts){return (new Date(ts).toDateString()===new Date().toDateString()?"сегодня, ":"")+fmtWhen(ts);}
+/* before — снимок перед восстановлением; keep — снимок, который сейчас нельзя вытеснить */
+function snapNow(before,keep){
+  return Promise.all([bkDB(),bkState()]).then(function(r){
+    var st=r[1],list=(BK.meta.snaps||[]).slice(),last=list[0];
+    if(!st.work&&!st.life) return;
+    if(last&&last.sig.work===st.sig.work&&last.sig.life===st.sig.life){
+      list[0]=Object.assign({},last,{at:Date.now()}); return bkSet("snaps",list);   /* ничего не изменилось */
+    }
+    var id=uid("s"),keys=Object.keys(st.blobs),drop=[];
+    list.unshift({id:id,at:Date.now(),before:!!before,sig:st.sig,size:st.size,keys:keys});
+    while(list.length>KEEP){var i=list.length-1;if(list[i].id===keep)i--;drop.push(list.splice(i,1)[0]);}
+    var used={}; list.forEach(function(s){s.keys.forEach(function(k){used[k]=1;});});
+    return idbDone(BK.db.transaction("blobs").objectStore("blobs").getAllKeys()).then(function(have){
+      var had={}; have.forEach(function(k){had[k]=1;});
+      BK.meta.snaps=list;
+      return bkTx(["snaps","blobs","meta"],function(t){
+        var bs=t.objectStore("blobs"),ss=t.objectStore("snaps");
+        keys.forEach(function(k){if(!had[k]) bs.put({key:k,blob:st.blobs[k]});});
+        have.forEach(function(k){if(!used[k]) bs.delete(k);});
+        ss.put({id:id,work:st.work,life:st.life});
+        drop.forEach(function(s){ss.delete(s.id);});
+        t.objectStore("meta").put({key:"snaps",value:list});
+      });
+    });
+  });
+}
+function snapDaily(){
+  var last=(BK.meta.snaps||[])[0];
+  if(last&&new Date(last.at).toDateString()===new Date().toDateString()) return Promise.resolve();
+  return snapNow(false).catch(function(e){flash("Снимок не сохранился: "+((e&&e.message)||""));});
+}
+/* часть снимка с файлами: part — "work" или "life" */
+function snapLoad(id,part){
+  return idbDone(BK.db.transaction("snaps").objectStore("snaps").get(id)).then(function(rec){
+    var rows=rec&&rec[part]; if(!rows) throw new Error("снимок не найден");
+    var os=BK.db.transaction("blobs").objectStore("blobs"),pre=part==="work"?"w:":"l:";
+    return Promise.all((rows.files||[]).map(function(f){
+      return idbDone(os.get(pre+f.id)).then(function(b){if(b) f.blob=b.blob;});
+    })).then(function(){return rows;});
+  });
+}
+function snapRestore(id,part){
+  var s=find(BK.meta.snaps||[],id); if(!s) return;
+  var what=part==="work"?"Grid Work":"Grid Life",other=part==="work"?"Grid Life":"Grid Work",when=snapWhen(s.at);
+  GridLife.dialog("Вернуть "+what+" к снимку: "+when+"?","Всё, что изменилось в "+what+" после этого, пропадёт, "+other+
+      " не изменится. Сначала сохранить текущее состояние снимком — чтобы можно было вернуться?",
+    [["save","Сохранить текущее и восстановить","main"],["go","Восстановить без сохранения","danger"],["","Отмена"]]).then(function(v){
+    if(!v) return;
+    return snapLoad(id,part).then(function(rows){
+      return (v==="save"?snapNow(true,id):Promise.resolve()).then(function(){
+        if(part==="life") return GridLife.load(rows);
+        S.open=null; S.openNote=null; closeDrawer();
+        return S.store.replace(rows).then(renderAll);
+      });
+    }).then(function(){flash(what+" восстановлен из снимка: "+when);bkRefresh();});
+  }).catch(function(e){flash("Не удалось восстановить: "+((e&&e.message)||""));});
+}
+/* «Удалить все данные Grid Life» убирает Grid Life и из снимков */
+function snapDropLife(){
+  return bkDB().then(function(){
+    var list=(BK.meta.snaps||[]).filter(function(s){return s.sig.work;}).map(function(s){
+      return Object.assign({},s,{sig:{work:s.sig.work,life:""},size:{work:s.size.work,life:0},
+        keys:s.keys.filter(function(k){return k.indexOf("l:")!==0;})});
+    }),keep={};
+    list.forEach(function(s){keep[s.id]=1;});
+    var gone=(BK.meta.snaps||[]).filter(function(s){return !keep[s.id];});
+    BK.meta.snaps=list;
+    return bkTx(["snaps","blobs","meta"],function(t){
+      var ss=t.objectStore("snaps"),bs=t.objectStore("blobs");
+      list.forEach(function(s){var r=ss.get(s.id);r.onsuccess=function(){if(r.result){r.result.life=null;ss.put(r.result);}};});
+      gone.forEach(function(s){ss.delete(s.id);});
+      var kr=bs.getAllKeys();
+      kr.onsuccess=function(){kr.result.forEach(function(k){if(String(k).indexOf("l:")===0) bs.delete(k);});};
+      t.objectStore("meta").put({key:"snaps",value:list});
+    });
+  });
+}
+
+/* ── напоминание и разделы настроек ── */
+function copyEvery(){return BK.meta.every||prefs().backupEvery||"week";}
+function copyDue(){
+  var m=S.store&&S.store.meta||{},every=copyEvery();
+  if(!BK.db||folder()||every==="never"||!(liveProjects().length||GridLife.hasData())) return false;
+  var last=Math.max(BK.meta.lastCopyAt||0,m.lastBackupAt||0,BK.meta.snooze||0,m.started||0);
+  return Date.now()-last>(every==="month"?30:7)*864e5;
+}
+/* плашка над доской и над списком Grid Life */
+function copyNoticeHTML(){
+  if(folder()) return BK.want&&!BK.later?"<span><b>Автокопии на паузе.</b> Браузер просит снова разрешить Grid сохранять "+
+      "копии в папку «"+esc(folder().name)+"».</span>"+
+    '<span class="row"><button class="btn" data-bkallow="1">Разрешить</button><button class="btn ghost" data-bklater="1">Позже</button></span>':"";
+  if(!copyDue()) return "";
+  prepCopy();
+  return "<span><b>Сохраните резервную копию.</b> Данные Grid хранятся только на этом устройстве — копия пригодится, "+
+      "если с ним что-то случится.</span>"+
+    '<span class="row"><button class="btn" data-bksave="1">Сохранить копию</button><button class="btn ghost" data-bksnooze="1">Позже</button></span>';
+}
+/* «Резервная копия» — один и тот же раздел в настройках Grid Work и Grid Life */
+function copyBody(){
+  prepCopy();
+  var last=Math.max(BK.meta.lastCopyAt||0,(S.store&&S.store.meta&&S.store.meta.lastBackupAt)||0),dir=folder(),every=copyEvery();
+  return "<p>Один файл со всем, что есть в Grid Work и Grid Life: проекты, задачи, заметки, файлы и настройки Grid Life "+
+      "(без PIN). Его можно перенести на другое устройство.</p>"+
+    '<p class="small">'+(last?"Последняя копия — "+esc(fmtWhen(last))+".":"Копий ещё не было.")+"</p>"+
+    '<div class="row"><button class="btn" data-bksave="1">Сохранить копию</button>'+
+      '<button class="btn ghost" data-bkrestore="1">Восстановить из файла</button></div>'+
+    (SHARE_OK?'<p class="small">Откроется меню «Поделиться»: сохраните файл в «Файлы» или iCloud Drive либо отправьте себе в Telegram.</p>':"")+
+    '<p class="small">При восстановлении проекты Grid Work из файла добавляются как новые, а задачи Grid Life заменяют текущие.</p>'+
+    (FOLDER_OK?"<h4>Автокопии в папку</h4>"+(dir
+      ?"<p>Папка «"+esc(dir.name)+"». "+(BK.perm&&BK.perm!=="granted"?"Браузер просит снова разрешить запись в неё."
+          :BK.meta.folderAt?"Последняя автокопия — "+esc(fmtWhen(BK.meta.folderAt))+".":"Автокопий ещё не было.")+"</p>"+
+        '<div class="row">'+(BK.perm&&BK.perm!=="granted"?'<button class="btn" data-bkallow="1">Разрешить</button>':"")+
+          '<button class="btn ghost" data-bkfolder="1">Сменить папку</button><button class="btn ghost" data-bkoff="1">Выключить</button></div>'
+      :"<p>Grid сам сохраняет копию в выбранную папку после изменений — не чаще раза в 10 минут — и хранит там последние "+
+          "7 файлов.</p>"+
+        '<div class="row"><button class="btn ghost" data-bkfolder="1">Выбрать папку для автокопий</button></div>')+
+      '<p class="small">Если папка синхронизируется с Яндекс Диском, Google Диском или iCloud, копии будут и в облаке.</p>':"")+
+    (dir?'<p class="small">Пока включены автокопии, Grid не напоминает о копии.</p>'
+      :'<label class="opt"><span>Напоминать о копии</span><select class="in" data-bkevery="1">'+
+        [["week","раз в неделю"],["month","раз в месяц"],["never","не напоминать"]].map(function(o){
+          return '<option value="'+o[0]+'"'+(every===o[0]?" selected":"")+">"+o[1]+"</option>";}).join("")+"</select></label>");
+}
+/* «Снимки»: part — какой режим вернёт кнопка в этих настройках */
+function snapsBody(part){
+  var name=part==="work"?"Grid Work":"Grid Life",list=(BK.meta.snaps||[]).filter(function(s){return s.sig[part];});
+  return "<p>Раз в день при открытии Grid сохраняет снимок данных Grid Work и Grid Life здесь же, на устройстве, и хранит "+
+      "последние 7. Снимок выручит после ошибки — например, если удалили лишнее. От удаления приложения, очистки браузера "+
+      "или смены устройства снимки не спасут: они лежат там же, где данные. Для этого нужна резервная копия.</p>"+
+    (list.length?'<div class="snaps">'+list.map(function(s){
+      var when=snapWhen(s.at);
+      return '<div class="snap"><span><b>'+esc(when)+"</b>"+(s.before?" · перед восстановлением":"")+" · "+fmtSize(s.size[part])+"</span>"+
+        '<button class="btn ghost sm" data-snap="'+esc(s.id)+'" data-part="'+part+'" aria-label="Восстановить '+name+" из снимка: "+
+        esc(when)+'">Восстановить</button></div>';
+    }).join("")+"</div>":'<p class="small">Снимков пока нет.</p>');
+}
+document.addEventListener("click",function(e){
+  var t=e.target,b;
+  if(t.closest("[data-bksave]")) saveCopy();
+  else if(t.closest("[data-bkrestore]")) pickCopy();
+  else if(t.closest("[data-bkfolder]")) pickFolder();
+  else if(t.closest("[data-bkallow]")) allowFolder();
+  else if(t.closest("[data-bkoff]")) folderOff();
+  else if(t.closest("[data-bksnooze]")) bkSet("snooze",Date.now()).then(bkRefresh);
+  else if(t.closest("[data-bklater]")){BK.later=true;bkRefresh();}
+  else if((b=t.closest("[data-snap]"))) snapRestore(b.dataset.snap,b.dataset.part);
+});
+document.addEventListener("change",function(e){if(e.target.matches("[data-bkevery]")) bkSet("every",e.target.value).then(bkRefresh);});
+/* при открытии и при возвращении в Grid — снимок дня; автокопия, если с прошлой что-то изменилось */
+function bkStart(){
+  if(BK.started) return;
+  BK.started=true;
+  bkDB().then(function(){
+    var dir=folder();
+    return dir&&dir.queryPermission({mode:"readwrite"}).then(function(p){BK.perm=p;scheduleFolder();});
+  }).then(snapDaily).then(bkRefresh,function(e){flash("Снимки и автокопии недоступны: "+((e&&e.message)||""));});
+  document.addEventListener("visibilitychange",function(){if(!document.hidden&&BK.db) snapDaily().then(bkRefresh);});
+}
+
 /* ═════════ настройки ═════════ */
 var settingsEl=$("#settings");
-S.feedScope="mine"; S.bk={all:false,files:true}; S.storageUsed=null;
+S.feedScope="mine"; S.storageUsed=null;
 function setSection(id,title,html){
   return '<section class="set" data-set="'+id+'"><div class="sect-h"><h3>'+esc(title)+"</h3></div>"+html+"</section>";
 }
@@ -3661,27 +4002,8 @@ function typesHTML(){
     '<p class="small">Стандартные типы — Отчёты, Обучение, Идея и другие — есть в каждом проекте.'+
       (own?"":" Статусы и свои типы меняет владелец проекта.")+"</p>");
 }
-function backupHTML(){
-  var demo=S.store.kind!=="supabase",p=project(),d=backupData(S.bk.all);
-  var size=d.files.reduce(function(s,f){return s+(Number(f.size)||0);},0);
-  return setSection("backup","Резервная копия",
-    "<p>Один файл: колонки, задачи с подзадачами и комментариями, заметки, типы, статусы, команда и файлы. "+
-      (demo?"":"Бесплатный план Supabase копий не хранит — сохраняйте их сами, например раз в неделю.")+"</p>"+
-    (p?'<div class="choice" role="radiogroup" aria-label="Что сохранить">'+
-        '<label><input type="radio" name="bkScope" value="one"'+(S.bk.all?"":" checked")+"><span>Этот проект<small>«"+esc(p.name)+"»</small></span></label>"+
-        '<label><input type="radio" name="bkScope" value="all"'+(S.bk.all?" checked":"")+"><span>Все проекты<small>Ваших проектов: "+
-          liveProjects().length+"</small></span></label></div>"+
-      '<label class="switch"><input type="checkbox" data-bkfiles="1"'+(S.bk.files?" checked":"")+"><span><b>Вместе с файлами</b><small>"+
-        (d.files.length?"Файлов: "+d.files.length+", "+fmtSize(size)+". Без них копия меньше, но файлы из неё не восстановить.":"Файлов пока нет.")+
-        "</small></span></label>":"")+
-    '<div class="row">'+(p?'<button class="btn" data-bkexport="1">Сохранить копию</button>':"")+
-      '<button class="btn ghost" data-bkimport="1">Восстановить из файла</button></div>'+
-    (COLLAB?'<p class="small">Восстановление добавляет проекты из файла как новые — то, что уже есть, не меняется. Вы станете их владельцем, '+
-      "команда из копии получит приглашения с прежними ролями. Ответственные сохранятся у тех, кто уже входил в Grid.</p>"
-    :'<p class="small">'+(S.store.meta.lastBackupAt?"Последняя копия — "+esc(fmtWhen(S.store.meta.lastBackupAt))+". ":"Копий ещё не было. ")+
-      "Восстановление добавляет проекты из файла как новые — то, что уже есть, не меняется.</p>"+
-      prefPick("backupEvery","Напоминать о копии",[["week","раз в неделю"],["month","раз в месяц"],["never","не напоминать"]])));
-}
+function backupHTML(){return setSection("backup","Резервная копия",copyBody());}
+function snapsHTML(){return setSection("snaps","Снимки",snapsBody("work"));}
 /* сколько места занято: с сервером — файлы в Supabase из 1 ГБ; на устройстве —
    всё, что браузер отвёл сайту (вместе с Grid Life и копией для работы без сети) */
 function fetchStorage(){
@@ -3773,15 +4095,15 @@ function aboutBody(){
     '<p class="small">Версия от '+esc(versionDate())+"</p>"+
     (tg?'<div class="row ab-tg"><a class="btn ghost" href="https://t.me/'+tg+'" target="_blank" rel="noopener noreferrer">'+
         'Сотрудничество и отзывы</a><span>Telegram: @'+tg+"</span></div>":"")+
-    (COLLAB?"":'<h4 class="ab-h">Конфиденциальность</h4>'+
+    (COLLAB?"":'<h4>Конфиденциальность</h4>'+
       "<p>Grid не собирает и не передаёт ваши данные: задачи, заметки, файлы и настройки хранятся только в браузере "+
         "этого устройства. Сайт размещён на GitHub Pages — как любой хостинг, GitHub видит обычные сведения о посещении "+
         "(адрес и браузер). Если вы напишете нам в Telegram, мы увидим ваш профиль Telegram и используем его только "+
         "для ответа.</p>"+
-      '<h4 class="ab-h">Условия</h4>'+
+      '<h4>Условия</h4>'+
       "<p>Grid бесплатный и предоставляется как есть, без гарантий. За сохранность данных отвечаете вы: они хранятся "+
         "только на вашем устройстве, поэтому сохраняйте резервные копии.</p>")+
-    '<h4 class="ab-h">Лицензии</h4>'+
+    '<h4>Лицензии</h4>'+
     '<ul class="ab-lic">'+FONT_LICENSES.map(function(f){
       return "<li>Шрифт "+f[0]+' — SIL Open Font License 1.1, <a href="fonts/'+f[1]+'/OFL.txt" target="_blank" rel="noopener">текст лицензии</a></li>';
     }).join("")+"<li>Значки нарисованы для Grid. "+(COLLAB?"Для совместной работы загружается библиотека supabase-js (лицензия MIT).":
@@ -4084,7 +4406,7 @@ function settingsHTML(){
     groupHead("Вы и участники","Профиль, имена для поля «Ответственный», вид и напоминания.")+
       profileHTML()+peopleHTML()+displayHTML()+notifyHTML()+
     (p?groupHead("Проект «"+p.name+"»","Название, перенос выполненных, статусы и свои типы.")+projectHTML()+typesHTML():"")+
-    groupHead("Данные",LOCAL_NOTE)+backupHTML()+storageHTML()+trashHTML()+
+    groupHead("Данные",LOCAL_NOTE)+backupHTML()+snapsHTML()+storageHTML()+trashHTML()+
     aboutHTML()+"</div>";
   return drawerHead("Настройки")+'<div class="d-body wset">'+
     groupHead("Лично для вас","Видите и меняете только вы.")+profileHTML()+displayHTML()+notifyHTML()+calendarsHTML()+
@@ -4177,8 +4499,6 @@ settingsEl.addEventListener("click",function(e){
   if(t.closest("[data-copylink]")){copyText(location.origin+location.pathname,"Ссылка на Grid скопирована");return;}
   if((b=t.closest("[data-setstatus]"))){statusSheet(b);return;}
   if((b=t.closest("[data-setkinds]"))){kindList(b,b.dataset.setkinds);return;}
-  if(t.closest("[data-bkexport]")){exportBackup();return;}
-  if(t.closest("[data-bkimport]")){pickBackup();return;}
   if(t.closest("[data-reset]")){resetLocal();return;}
   if(t.closest("[data-persist]")){persistAsked=false;askPersist();return;}
   if((b=t.closest("[data-trestore]"))){var r=b.dataset.trestore.split(":");restoreItem(r[0],r.slice(1).join(":"));return;}
@@ -4232,8 +4552,6 @@ settingsEl.addEventListener("change",function(e){
   if(t.matches("[data-projdescr]")){patchProject(S.project,{descr:t.value});return;}
   if(t.matches("[data-projmove]")){setProjectMove(t.checked);return;}
   if(t.matches("[data-mrole]")){setRole(t.dataset.mrole,t.value);return;}
-  if(t.matches("[data-bkfiles]")){S.bk.files=t.checked;return;}
-  if(t.name==="bkScope"){S.bk.all=t.value==="all";renderSettings(true);return;}
   if(t.name!=="feedScope") return;
   var f=myFeed();
   if(f){f.scope=t.value;w(S.store.update("feeds",f.id,{scope:f.scope}));}
@@ -4589,9 +4907,10 @@ function attach(store){
       renderSide(); renderSettings();
       openFromHash();
       if(coll==="profiles") pushPresence();
-      /* когда загрузилось всё, владелец чистит корзину от просроченного */
+      bkChanged();
+      /* когда загрузилось всё, владелец чистит корзину от просроченного; на устройстве — снимок дня */
       if(!loaded.all){loaded[coll]=1;
-        if(COLLS.every(function(c){return loaded[c];})){loaded.all=1;purgeOld();}}
+        if(COLLS.every(function(c){return loaded[c];})){loaded.all=1;purgeOld();if(store.kind==="local") bkStart();}}
     });
   });
 }
@@ -4599,32 +4918,21 @@ function attach(store){
    где хранятся данные; потом — мягкое напоминание о резервной копии. */
 var LOCAL_NOTE="Все данные хранятся только на этом устройстве и никуда не отправляются. "+
   "Сохраняйте резервную копию: при очистке браузера или смене устройства данные пропадут.";
-function backupDue(){
-  var m=S.store&&S.store.meta,every=prefs().backupEvery;
-  if(!m||every==="never"||!liveProjects().length) return false;
-  var last=Math.max(m.lastBackupAt||0,m.backupSnooze||0,m.started||0);
-  return Date.now()-last>(every==="month"?30:7)*864e5;
-}
 function renderNotice(){
-  var el=$("#notice"),m=S.store&&S.store.kind==="local"&&!COLLAB?S.store.meta:null;
+  var el=$("#notice"),m=S.store&&S.store.kind==="local"&&!COLLAB?S.store.meta:null,copy;
   if(!m||!isWork()){el.hidden=true;el.innerHTML="";return;}
   if(m.sample){
     el.hidden=false;
     el.innerHTML='<span><b>Это пример</b> — проекты, задачи и заметки, чтобы было видно, как всё устроено. '+esc(LOCAL_NOTE)+"</span>"+
       '<span class="row"><button class="btn" data-nreset="1">Очистить и начать с нуля</button>'+
       '<button class="btn ghost" data-nkeep="1">Оставить пример</button></span>';
-  }else if(backupDue()){
-    el.hidden=false;
-    el.innerHTML="<span><b>Сохраните резервную копию.</b> Данные Grid Work хранятся только на этом устройстве — "+
-      "копия пригодится, если с ним что-то случится.</span>"+
-      '<span class="row"><button class="btn" data-nbackup="1">Сохранить копию</button>'+
-      '<button class="btn ghost" data-nsnooze="1">Позже</button></span>';
-  }else{el.hidden=true;el.innerHTML="";}
+  }else if((copy=copyNoticeHTML())){el.hidden=false;el.innerHTML=copy;}
+  else{el.hidden=true;el.innerHTML="";}
 }
 /* «Очистить и начать с нуля»: всё Grid Work на устройстве, кроме вашего профиля */
 function resetLocal(){
   if(!confirm("Удалить все проекты, задачи, заметки и файлы Grid Work на этом устройстве? Ваш профиль останется.\n\n"+
-    "Отменить будет нельзя. Если данные нужны, сначала сохраните резервную копию.")) return;
+    "Вернуть их можно из снимка (Настройки → Снимки) или из резервной копии.")) return;
   S.open=null; S.openNote=null; closeDrawer(); closeSettings();
   S.store.reset().then(function(){renderAll();flash("Grid Work очищен — можно начинать с нуля");});
 }
@@ -4632,8 +4940,6 @@ $("#notice").addEventListener("click",function(e){
   var t=e.target;
   if(t.closest("[data-nreset]")) resetLocal();
   else if(t.closest("[data-nkeep]")) S.store.setMeta("sample",false).then(renderNotice);
-  else if(t.closest("[data-nbackup]")){S.bk.all=true;exportBackup();}
-  else if(t.closest("[data-nsnooze]")) S.store.setMeta("backupSnooze",Date.now()).then(renderNotice);
 });
 /* без сервера Grid Work открывается сразу — данные на этом устройстве */
 function startLocal(){
@@ -4772,8 +5078,9 @@ function boot(){
     if(r&&r.data&&r.data.session) start(sb,r.data.session.user); else signInScreen(sb,refused);
   }).catch(function(){signInScreen(sb,refused);});
 }
-/* Рабочая часть запускается при первом входе в Grid Work: библиотеку
-   Supabase грузим только тогда, и Grid Life не зависит ни от сети, ни от входа. */
+/* С сервером рабочая часть запускается при первом входе в Grid Work: библиотеку
+   Supabase грузим только тогда, и Grid Life не зависит ни от сети, ни от входа.
+   Без сервера данные Grid Work грузятся при открытии Grid в любом режиме. */
 var workBooted=false;
 function bootWork(){
   if(workBooted) return; workBooted=true;
@@ -4820,6 +5127,7 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
   typeEditor:typeEditor,kindChip:kindChip,orderBetween:orderBetween,byOrder:byOrder,find:find,setMode:setMode,
   attachSwipe:attachSwipe,fitNavTitle:fitNavTitle,navDates:navDates,icsText:icsText,
   collab:COLLAB,systemNotifyHTML:systemNotifyHTML,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,aboutBody:aboutBody,
+  copyBody:copyBody,snapsBody:snapsBody,copyNoticeHTML:copyNoticeHTML,saveCopy:saveCopy,bkChanged:bkChanged,snapDropLife:snapDropLife,
   push:{url:pushURL,key:pushKey,support:pushSupport,ask:askNotify,subscription:pushSubscription,error:pushError}};
 /* работа без сети и установка на главный экран (только на http/https) */
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
@@ -4832,7 +5140,12 @@ if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
   });
 }
 /* life.js подключается следующим скриптом, поэтому стартуем, когда он загружен */
-document.addEventListener("DOMContentLoaded",function(){setMode(root.dataset.mode);openFromHash();GridLife.boot();});
+document.addEventListener("DOMContentLoaded",function(){
+  setMode(root.dataset.mode);openFromHash();GridLife.boot();
+  /* снимкам и автокопиям нужны оба режима: без сервера данные Grid Work грузим сразу,
+     даже если открыт Grid Life (снимок — из attach, когда всё загрузилось) */
+  if(COLLAB) bkStart(); else bootWork();
+});
 })();
 </script>
 <script src="life.js"></script>

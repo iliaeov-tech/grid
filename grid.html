@@ -741,6 +741,19 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
   font-size:13px;color:var(--ink-2)}
 .set .snap b{font-weight:600;color:var(--ink)}
 .set .snap .btn{flex:none;min-height:34px;padding:6px 12px;font-size:12.5px}
+.set .fline{font-size:13px;color:var(--ink-2)}
+.set .fline.warn{color:var(--danger)}
+/* папка Grid: значок в шапке и плашка под ней */
+.fstat{display:inline-flex;align-items:center;gap:5px;flex:none;padding:4px 9px;border:0;border-radius:99px;
+  background:none;color:var(--ink-3);font-size:12px;cursor:pointer}
+.fstat:hover{background:var(--ground);color:var(--ink-2)}
+.fstat svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.fstat.warn{color:var(--danger);background:var(--danger-soft)}
+.fbar.warn{background:var(--danger-soft)}
+.gate .gsub{margin:6px 0 4px}
+.gate .gskip{display:block;margin:18px auto 0;padding:6px;border:0;background:none;color:var(--ink-3);font-size:13px;
+  text-decoration:underline;cursor:pointer}
+.gate .gskip:hover{color:var(--ink)}
 .set .ab-lic{margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
 .set .ab-lic a{color:var(--accent)}
 .set .ab-tg{align-items:center;column-gap:12px}
@@ -961,6 +974,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
       <span class="mark" id="logo"><span>Grid</span><span id="modeName">Work</span><span class="mark-ic" id="modeIcon"></span></span>
       <button class="mode-switch" id="modeSwitch" role="switch" aria-checked="false" aria-label="Личный режим Grid Life"><span class="knob"></span></button>
     </div>
+    <button class="fstat" id="folderStat" data-fstat="1" hidden></button>
     <span class="rail-sep work-only"></span>
     <button class="b-title work-only" id="boardTitle" title="Переименовать проект">Проект</button>
     <div class="tally work-only" id="tally"></div>
@@ -985,6 +999,7 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
     </div>
   </header>
 
+  <div class="notice fbar" id="folderBar" role="status" hidden></div>
   <div class="notice work-only" id="notice" hidden></div>
 
   <nav class="tabs work-only" id="tabs" role="tablist"></nav>
@@ -1440,7 +1455,7 @@ function askPersist(){
   navigator.storage.persist().then(function(p){S.persisted=p;renderSettings();},function(){});
 }
 function localStore(){
-  var db=null,data={},meta={},subs={};
+  var db=null,data={},meta={},subs={},fresh=false;
   function tx(stores,fn){
     return new Promise(function(res,rej){
       var t=db.transaction(stores,"readwrite"); fn(t);
@@ -1475,6 +1490,7 @@ function localStore(){
     if(meta.started) return;
     var old=null; try{old=JSON.parse(localStorage.getItem(OLD_KEY));}catch(e){}
     var first=old&&old.projects?fromOld(old):{data:starter(),me:"m-1",sample:true};
+    fresh=!!first.sample;
     COLLS.forEach(function(c){data[c]=first.data[c]||[];});
     Object.assign(meta,{started:Date.now(),me:first.me,sample:!!first.sample});
     return writeAll(data,meta).then(function(){
@@ -1483,6 +1499,8 @@ function localStore(){
   }).then(function(){return meta;});
   return {
     kind:"local",refetch:function(){},ready:ready,meta:meta,
+    /* открылся без данных: при этом открытии положили пример */
+    isFresh:function(){return fresh;},
     setMeta:function(k,v){meta[k]=v;return saved(tx(["meta"],function(t){t.objectStore("meta").put({key:k,value:v});}));},
     subscribe:function(c,cb){(subs[c]=subs[c]||[]).push(cb);
       ready.then(function(){cb(data[c].slice());});
@@ -3476,25 +3494,26 @@ function restoreBackup(d){
   }).then(function(){return created;});
 }
 
-/* ═════════ копия, автокопии и снимки: Grid Work и Grid Life вместе ═════════ */
+/* ═════════ папка Grid, копия и снимки: Grid Work и Grid Life вместе ═════════ */
 /* На сервер ничего не уходит.
+   Папка Grid (компьютер, где браузер умеет работать с папками) — основное
+   хранилище, браузер — рабочая копия; см. «папка Grid» ниже.
    Копия — один файл JSON с обоими режимами (части — те же, что у прежних
-   отдельных копий, и старые файлы тоже восстанавливаются): «Сохранить копию»
-   (на телефоне — меню «Поделиться»), автокопия в выбранную папку (Chrome и
-   Edge на компьютере: после изменений, не чаще раза в 10 минут, последние 7).
+   отдельных копий, и старые файлы тоже восстанавливаются): «Сохранить копию»,
+   на телефоне — меню «Поделиться».
    Снимки — раз в день при открытии, последние 7, в IndexedDB grid-backup;
    спасают от ошибок, но лежат там же, где данные. Файл вложения в снимках
    хранится один раз (blobs, ключ w:id или l:id), сколько бы снимков его ни помнили.
-   С совместной работой Grid Work живёт на сервере — в снимки и автокопии
-   попадает только Grid Life. */
-var COPY_APP="grid",KEEP=7,FOLDER_EVERY=10*60e3;
-var FOLDER_FILE=/^Grid — копия — \d{4}-\d{2}-\d{2} \d{2}-\d{2}\.json$/;
-var FOLDER_OK=typeof window.showDirectoryPicker==="function";
+   С совместной работой Grid Work живёт на сервере — в снимки попадает только
+   Grid Life, а папки Grid нет. */
+var COPY_APP="grid",KEEP=7;
+var FOLDER_OK=!COLLAB&&typeof window.showDirectoryPicker==="function"&&!matchMedia("(pointer: coarse)").matches;
 var SHARE_OK=(function(){
   try{return matchMedia("(pointer: coarse)").matches&&!!navigator.canShare&&
     navigator.canShare({files:[new File(["{}"],"grid.json",{type:"application/json"})]});}catch(e){return false;}
 })();
-var BK={db:null,meta:{},ver:0,prep:null,prepTimer:0,timer:0,perm:"",want:false,later:false};
+var BK={db:null,meta:{},ver:0,prep:null,prepTimer:0,q:Promise.resolve(),timer:0,first:0,perm:"",ahead:null,later:"",error:"",
+  history:null,fileNames:null};
 function bkDB(){
   if(!BK.dbP) BK.dbP=new Promise(function(res,rej){
     if(!window.indexedDB){rej(new Error("браузер не поддерживает хранение данных"));return;}
@@ -3523,8 +3542,7 @@ function bkHash(s){
   for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
   return (h>>>0).toString(36)+"."+s.length;
 }
-function folder(){return FOLDER_OK&&BK.meta.dir||null;}
-function bkRefresh(){renderNotice();GridLife.refresh();renderSettings();}
+function bkRefresh(){renderNotice();GridLife.refresh();renderSettings();renderFolderStat();renderFolderBar();}
 /* любая правка в Grid Work или Grid Life */
 function bkChanged(){BK.ver++;if(BK.db&&folder()) scheduleFolder();}
 
@@ -3550,10 +3568,10 @@ function bkState(){
 }
 
 /* ── копия ── */
-/* auto — автокопия в папку; noLife — без Grid Life (PIN не ввели) */
-function buildCopy(auto,noLife){
+/* noLife — без Grid Life (PIN не ввели) */
+function buildCopy(noLife){
   var ver=BK.ver;
-  return Promise.all([auto&&COLLAB?null:workCopyPart(),noLife?null:GridLife.copyPart()]).then(function(r){
+  return Promise.all([workCopyPart(),noLife?null:GridLife.copyPart()]).then(function(r){
     if(!r[0]&&!r[1]) throw new Error("в Grid пока нет данных");
     return {ver:ver,name:"Grid — копия — "+todayISO()+".json",
       json:JSON.stringify({app:COPY_APP,version:1,exportedAt:Date.now(),work:r[0],life:r[1]})};
@@ -3577,7 +3595,7 @@ function saveCopy(){
     var c=life&&BK.prep&&BK.prep.ver===BK.ver&&BK.prep.json?BK.prep:null;
     if(c) return deliverCopy(c);
     flash("Собираем копию…");
-    return buildCopy(false,!life).then(function(c){if(SHARE_OK&&life) BK.prep=c;return deliverCopy(c);},
+    return buildCopy(!life).then(function(c){if(SHARE_OK&&life) BK.prep=c;return deliverCopy(c);},
       function(e){flash("Копия не собралась: "+((e&&e.message)||"нет связи с хранилищем"));return false;});
   });
 }
@@ -3626,56 +3644,378 @@ function readCopy(txt){
   });
 }
 
-/* ── автокопии в папку ── */
-function pickFolder(){
-  window.showDirectoryPicker({id:"grid-copies",mode:"readwrite"}).then(function(h){
-    BK.perm="granted";
-    return bkSet("dir",h).then(function(){return bkSet("folderSig","");}).then(writeFolder);
-  },function(e){if(!e||e.name!=="AbortError") flash("Папку выбрать не удалось: "+((e&&e.message)||""));}).then(bkRefresh);
+/* ── папка Grid: основное хранилище на компьютере ── */
+/* Где браузер умеет работать с папками (Chrome, Edge, Яндекс Браузер на
+   компьютере), данные живут в выбранной папке, а браузер — рабочая копия:
+   изменения уходят в папку через 3–5 секунд, и очистка браузера их не сотрёт.
+   В папке: grid.json — всё состояние Grid Work и Grid Life (как в снимке, с
+   корзиной, и ещё PIN Grid Life), files/ — вложения, каждое пишется один раз,
+   history/ — последнее состояние каждого из 7 последних дней работы и версии,
+   отложенные при выборе. rev — метка записи: другая метка в папке значит, что файл записал
+   другой компьютер или браузер. Сливать версии Grid не пытается — человек
+   выбирает, какую оставить, вторая уходит в историю. */
+var DATA_FILE="grid.json",FOLDER_APP="grid-folder",HISTORY_DAYS=7;
+function folder(){return FOLDER_OK&&BK.meta.dir||null;}
+function errText(e){return (e&&(e.message||e.name))||"ошибка записи";}
+function hhmm(d){return String(d.getHours()).padStart(2,"0")+"-"+String(d.getMinutes()).padStart(2,"0");}
+function bkSetAll(o){
+  Object.assign(BK.meta,o);
+  return bkTx(["meta"],function(t){Object.keys(o).forEach(function(k){t.objectStore("meta").put({key:k,value:o[k]});});});
 }
-function folderOff(){
-  clearTimeout(BK.timer); BK.timer=0; BK.want=false; delete BK.meta.dir;
-  bkTx(["meta"],function(t){t.objectStore("meta").delete("dir");}).then(bkRefresh);
+function sub(dir,name){return dir.getDirectoryHandle(name,{create:true});}
+function names(dir){
+  var out=[],it=dir.keys();
+  function next(){return it.next().then(function(r){if(r.done) return out;out.push(r.value);return next();});}
+  return next();
 }
-function allowFolder(){
-  folder().requestPermission({mode:"readwrite"}).then(function(p){BK.perm=p;if(p==="granted") return writeFolder();}).then(bkRefresh);
+function writeText(dir,name,data){
+  return dir.getFileHandle(name,{create:true}).then(function(h){return h.createWritable();})
+    .then(function(w){return w.write(data).then(function(){return w.close();});});
 }
-/* после изменений — не чаще раза в 10 минут */
-function scheduleFolder(){
-  if(BK.timer) return;
-  BK.timer=setTimeout(function(){BK.timer=0;writeFolder().then(bkRefresh);},
-    Math.max(5e3,(BK.meta.folderAt||0)+FOLDER_EVERY-Date.now()));
+function readText(dir,name){return dir.getFileHandle(name).then(function(h){return h.getFile();}).then(function(f){return f.text();});}
+/* файл вложения: w:id → files/w-id */
+function blobName(k){return k.replace(":","-").replace(/[^\w.-]/g,"_");}
+/* дела папки идут по одному: запись, загрузка, выбор версии */
+function inFolder(fn){
+  var p=BK.q.then(fn);
+  BK.q=p.catch(function(){});
+  return p.then(function(r){bkRefresh();return r;},function(e){bkRefresh();throw e;});
 }
-function writeFolder(){
-  var dir=folder(); if(!dir) return Promise.resolve();
-  return bkState().then(function(st){
-    var sig=st.sig.work+"|"+st.sig.life;
-    if(sig===BK.meta.folderSig){BK.want=false;return;}
-    return dir.queryPermission({mode:"readwrite"}).then(function(p){
-      BK.perm=p; BK.want=p!=="granted";
-      if(BK.want) return;
-      var d=new Date(),hm=String(d.getHours()).padStart(2,"0")+"-"+String(d.getMinutes()).padStart(2,"0"),json;
-      return buildCopy(true).then(function(c){
-        json=c.json;
-        return dir.getFileHandle("Grid — копия — "+todayISO()+" "+hm+".json",{create:true});
-      }).then(function(fh){return fh.createWritable();}).then(function(out){
-        return out.write(json).then(function(){return out.close();});
-      }).then(function(){return pruneFolder(dir);}).then(function(){
-        return Promise.all([bkSet("folderAt",Date.now()),bkSet("folderSig",sig)]);
+
+/* состояние для папки: как для снимка, плюс PIN Grid Life и хозяин устройства */
+function folderState(){
+  return Promise.all([bkState(),GridLife.pin()]).then(function(r){
+    var st=r[0],me=S.store&&S.store.meta&&S.store.meta.me||"";
+    st.pin=r[1]; st.me=me;
+    st.fsig=bkHash(st.sig.work+"|"+st.sig.life+"|"+JSON.stringify(st.pin)+"|"+me);
+    return st;
+  });
+}
+function folderDoc(st,rev){
+  return {app:FOLDER_APP,version:1,rev:rev,savedAt:Date.now(),me:st.me,work:st.work,
+    life:st.life&&Object.assign({},st.life,{pin:st.pin})};
+}
+/* что в папке сейчас: метка и время записи; текст читаем, только если файл менялся (или папка новая) */
+function readHead(dir,fresh){
+  return dir.getFileHandle(DATA_FILE).then(function(h){return h.getFile();}).then(function(f){
+    if(!fresh&&BK.meta.dataRev&&f.lastModified===BK.meta.dataMtime)
+      return {rev:BK.meta.dataRev,savedAt:BK.meta.dataSavedAt,mtime:f.lastModified};
+    return f.text().then(function(t){
+      var d=null; try{d=JSON.parse(t);}catch(e){}
+      if(!d||d.app!==FOLDER_APP) throw new Error("файл "+DATA_FILE+" в папке повреждён или не от Grid");
+      return {rev:d.rev,savedAt:d.savedAt,mtime:f.lastModified,text:t,data:d};
+    });
+  },function(e){if(e&&e.name==="NotFoundError") return null; throw e;});
+}
+/* вложения — отдельными файлами, каждое один раз */
+function putFiles(dir,blobs){
+  var keys=Object.keys(blobs);
+  if(!keys.length) return Promise.resolve();
+  return sub(dir,"files").then(function(fd){
+    return (BK.fileNames?Promise.resolve(BK.fileNames):names(fd).then(function(l){return (BK.fileNames=new Set(l));})).then(function(have){
+      return keys.filter(function(k){return !have.has(blobName(k));}).reduce(function(p,k){
+        return p.then(function(){return writeText(fd,blobName(k),blobs[k]);}).then(function(){have.add(blobName(k));});
+      },Promise.resolve());
+    });
+  });
+}
+
+/* ── история в папке ── */
+function readHistory(dir){
+  return sub(dir,"history").then(names).then(function(l){
+    return (BK.history=l.filter(function(n){return /^grid-\d{4}-\d\d-\d\d.*\.json$/.test(n);}).sort().reverse());
+  });
+}
+function histLabel(n){
+  var m=/^grid-(\d{4})-(\d\d)-(\d\d)(?: (\d\d)-(\d\d) (.+))?\.json$/.exec(n); if(!m) return n;
+  var day=Number(m[3])+" "+MONTHS[Number(m[2])-1]+" "+m[1];
+  return m[4]?day+", "+m[4]+":"+m[5]+" · "+m[6]:day;
+}
+function setAside(dir,text,label){
+  return sub(dir,"history").then(function(hd){return writeText(hd,"grid-"+todayISO()+" "+hhmm(new Date())+" "+label+".json",text);})
+    .then(function(){return readHistory(dir);});
+}
+/* состояние этого браузера — в историю папки, вместе с вложениями */
+function asideBrowser(dir,label){
+  return folderState().then(function(st){
+    return putFiles(dir,st.blobs).then(function(){return setAside(dir,JSON.stringify(folderDoc(st,uid("r"))),label);});
+  });
+}
+/* Первая запись нового дня кладёт прежнее состояние в историю как версию того дня.
+   Версий дня храним 7 последних (дни, когда Grid меняли, — после отпуска история не пустеет),
+   отложенных — за 7 дней; лишние удаляем, а с ними вложения, которых больше нигде нет. */
+function rotate(dir,head,st){
+  var day=head&&head.savedAt?iso(new Date(head.savedAt)):"";
+  if(!day||day>=todayISO()) return Promise.resolve();
+  var edge=iso(new Date(Date.now()-(HISTORY_DAYS-1)*864e5));
+  return sub(dir,"history").then(function(hd){
+    return (head.text?Promise.resolve(head.text):readText(dir,DATA_FILE)).then(function(t){
+      return writeText(hd,"grid-"+day+".json",t);
+    }).then(function(){return names(hd);}).then(function(l){
+      var old=l.filter(function(n){return /^grid-\d{4}-\d\d-\d\d\.json$/.test(n);}).sort().reverse().slice(HISTORY_DAYS)
+        .concat(l.filter(function(n){var m=/^grid-(\d{4}-\d\d-\d\d) /.exec(n);return m&&m[1]<edge;}));
+      return Promise.all(old.map(function(n){return hd.removeEntry(n);})).then(function(){
+        return Promise.all(l.filter(function(n){return old.indexOf(n)<0&&/\.json$/.test(n);}).map(function(n){
+          return readText(hd,n).then(function(t){return JSON.parse(t);},function(){return null;});
+        }));
+      });
+    }).then(function(docs){return gcFiles(dir,st,docs);});
+  }).then(function(){return readHistory(dir);});
+}
+function docFiles(d,used){
+  if(d.work) (d.work.files||[]).forEach(function(f){used[blobName("w:"+f.id)]=1;});
+  if(d.life) (d.life.files||[]).forEach(function(f){used[blobName("l:"+f.id)]=1;});
+}
+function gcFiles(dir,st,docs){
+  if(docs.some(function(d){return !d;})) return;     /* какую-то версию не прочитать (облако ещё качает) — не рискуем */
+  var used={};
+  docFiles(st,used); docs.forEach(function(d){docFiles(d,used);});
+  return sub(dir,"files").then(function(fd){
+    return names(fd).then(function(l){
+      return Promise.all(l.filter(function(n){return !used[n];}).map(function(n){return fd.removeEntry(n);})).then(function(){
+        BK.fileNames=new Set(l.filter(function(n){return used[n];}));
       });
     });
-  }).catch(function(e){flash("Автокопия в папку не сохранилась: "+((e&&e.message)||""));});
-}
-function pruneFolder(dir){
-  var names=[],it=dir.keys();
-  function next(){return it.next().then(function(r){
-    if(r.done) return;
-    if(FOLDER_FILE.test(r.value)) names.push(r.value);
-    return next();
-  });}
-  return next().then(function(){
-    return Promise.all(names.sort().reverse().slice(KEEP).map(function(n){return dir.removeEntry(n);}));
   });
+}
+
+/* ── запись и загрузка ── */
+function writeData(dir,st,head){
+  var doc=folderDoc(st,uid("r"));
+  return rotate(dir,head,st).then(function(){return putFiles(dir,st.blobs);})
+    .then(function(){return writeText(dir,DATA_FILE,JSON.stringify(doc));})
+    .then(function(){return dir.getFileHandle(DATA_FILE);}).then(function(h){return h.getFile();})
+    .then(function(f){
+      return bkSetAll({dataRev:doc.rev,dataSig:st.fsig,dataMtime:f.lastModified,dataSavedAt:doc.savedAt,dataAt:Date.now()});
+    });
+}
+/* через 3 секунды после правки, но не позже 5 секунд после первой несохранённой */
+function scheduleFolder(){
+  if(!folder()) return;
+  var now=Date.now();
+  if(!BK.first) BK.first=now;
+  clearTimeout(BK.timer);
+  BK.timer=setTimeout(saveFolder,Math.max(0,Math.min(now+3e3,BK.first+5e3)-now));
+}
+/* Записать в папку несохранённое. Если файл в папке записал кто-то ещё —
+   ничего не трогаем: плашка предлагает загрузить его или выбрать версию. */
+function saveFolder(){
+  clearTimeout(BK.timer); BK.timer=0; BK.first=0;
+  var dir=folder(); if(!dir) return Promise.resolve();
+  return inFolder(function(){
+    return dir.queryPermission({mode:"readwrite"}).then(function(p){
+      BK.perm=p; if(p!=="granted") return;          /* изменения ждут в браузере */
+      return Promise.all([readHead(dir),folderState()]).then(function(r){
+        var head=r[0],st=r[1];
+        if(head&&head.rev!==BK.meta.dataRev){BK.ahead={head:head,dirty:st.fsig!==BK.meta.dataSig};return;}
+        BK.ahead=null;
+        if(head&&st.fsig===BK.meta.dataSig) return;
+        return writeData(dir,st,head);
+      });
+    }).then(function(){BK.error="";},function(e){BK.error=errText(e);});
+  });
+}
+/* версию из папки — в браузер; вложения берём из files/ */
+function applyDoc(dir,d){
+  var miss=0;
+  return sub(dir,"files").then(function(fd){
+    function attach(rows,pre){
+      return Promise.all((rows||[]).map(function(f){
+        return fd.getFileHandle(blobName(pre+f.id)).then(function(h){return h.getFile();}).then(function(file){
+          return file.arrayBuffer().then(function(b){f.blob=new Blob([b],{type:f.mime||file.type||"application/octet-stream"});});
+        },function(){miss++;});
+      }));
+    }
+    return Promise.all([d.work&&attach(d.work.files,"w:"),d.life&&attach(d.life.files,"l:")]);
+  }).then(function(){
+    if(!d.work||!S.store||!S.store.replace) return;
+    S.open=null; S.openNote=null; closeDrawer();
+    return S.store.replace(d.work).then(function(){
+      if(d.me){S.me=d.me;return S.store.setMeta("me",d.me);}
+    }).then(renderAll);
+  }).then(function(){
+    if(d.life) return GridLife.load(d.life).then(function(){GridLife.setPin(d.life.pin||null);});
+  }).then(function(){
+    if(miss) flash("Не все вложения нашлись в папке ("+miss+") — возможно, облако ещё не докачало их");
+  });
+}
+/* загруженная версия — теперь сохранённая */
+function loadedFrom(head){
+  return folderState().then(function(st){
+    BK.ahead=null;
+    return bkSetAll({dataRev:head.rev,dataSig:st.fsig,dataMtime:head.mtime,dataSavedAt:head.savedAt,dataAt:Date.now()});
+  });
+}
+/* «Загрузить» / «Оставить версию из папки»: своё, если было, — в историю */
+function takeFolder(){
+  var dir=folder(),a=BK.ahead; if(!dir||!a) return Promise.resolve();
+  return inFolder(function(){
+    return (a.dirty?asideBrowser(dir,"из этого браузера"):Promise.resolve())
+      .then(function(){return a.head.data||readText(dir,DATA_FILE).then(JSON.parse);})
+      .then(function(d){return applyDoc(dir,d);}).then(function(){return loadedFrom(a.head);})
+      .then(function(){flash("Загружена версия из папки — от "+fmtWhen(a.head.savedAt));});
+  }).catch(function(e){flash("Не удалось загрузить из папки: "+errText(e));});
+}
+/* «Оставить версию этого браузера»: та, что в папке, — в историю */
+function keepBrowser(){
+  var dir=folder(),a=BK.ahead; if(!dir||!a) return Promise.resolve();
+  return inFolder(function(){
+    return (a.head.text?Promise.resolve(a.head.text):readText(dir,DATA_FILE)).then(function(t){return setAside(dir,t,"из папки");})
+      .then(folderState).then(function(st){BK.ahead=null;return writeData(dir,st,null);})
+      .then(function(){flash("В папке — версия этого браузера, вторая сохранена в истории папки");});
+  }).catch(function(e){flash("Не удалось записать в папку: "+errText(e));});
+}
+function loadHistory(name){
+  var dir=folder(); if(!dir) return;
+  GridLife.dialog("Загрузить версию: "+histLabel(name)+"?",
+    "Данные Grid Work и Grid Life заменятся этой версией. То, что сейчас, сохранится в истории папки.",
+    [["go","Загрузить","main"],["","Отмена"]]).then(function(v){
+    if(!v) return;
+    return inFolder(function(){
+      return asideBrowser(dir,"до загрузки").then(function(){return sub(dir,"history");})
+        .then(function(hd){return readText(hd,name);}).then(function(t){return applyDoc(dir,JSON.parse(t));})
+        .then(folderState).then(function(st){BK.ahead=null;return writeData(dir,st,null);})
+        .then(function(){closeSettings();flash("Загружена версия: "+histLabel(name));});
+    }).catch(function(e){flash("Не удалось загрузить версию: "+errText(e));});
+  });
+}
+
+/* ── выбор папки, доступ, отключение ── */
+function connectFolder(h){
+  BK.fileNames=null; BK.ahead=null; BK.error=""; BK.perm="granted";
+  return bkSetAll({dir:h,dataRev:"",dataSig:"",dataMtime:0,dataSavedAt:0,dataAt:0}).then(function(){return readHistory(h);});
+}
+/* find — «Найти мои данные»; fresh — с экрана первого запуска: в браузере только пример.
+   Ответ — true, если папка подключена. */
+function pickFolder(find,fresh){
+  return window.showDirectoryPicker({id:"grid-data",mode:"readwrite"}).then(function(h){
+    return readHead(h,true).then(function(head){
+      if(!head){
+        if(!find) return connectFolder(h).then(saveFolder).then(function(){flash("Данные Grid хранятся в папке «"+h.name+"»");return true;});
+        return GridLife.dialog("В папке «"+h.name+"» нет данных Grid","Выберите другую папку — или храните данные Grid в этой.",
+          [["here","Хранить данные здесь","main"],["other","Выбрать другую папку"],["","Отмена"]]).then(function(v){
+          if(v==="other") return pickFolder(true,fresh);
+          if(v!=="here") return false;
+          return connectFolder(h).then(saveFolder).then(function(){return true;});
+        });
+      }
+      var when="Версия от "+fmtWhen(head.savedAt)+".";
+      return GridLife.dialog("В папке «"+h.name+"» есть данные Grid",find||fresh?when:when+
+          " Загрузить их или записать туда данные этого браузера? Вторая версия сохранится в истории папки.",
+        find||fresh?[["load","Загрузить","main"],["","Отмена"]]
+          :[["load","Загрузить из папки","main"],["mine","Записать данные этого браузера"],["","Отмена"]]).then(function(v){
+        if(!v) return false;
+        return connectFolder(h).then(function(){
+          BK.ahead={head:head,dirty:!fresh};
+          return v==="load"?takeFolder():keepBrowser();
+        }).then(function(){return true;});
+      });
+    });
+  },function(e){
+    if(!e||e.name!=="AbortError") flash("Папку выбрать не удалось: "+errText(e));
+    return false;
+  });
+}
+function allowFolder(){
+  var dir=folder(); if(!dir) return;
+  dir.requestPermission({mode:"readwrite"}).then(function(p){
+    BK.perm=p;
+    if(p==="granted") return readHistory(dir).then(saveFolder);
+    bkRefresh();
+  },function(e){flash("Доступ не получен: "+errText(e));});
+}
+function folderOff(){
+  GridLife.dialog("Отключить папку Grid?","Данные останутся и в папке, и в браузере, но новые изменения в папку попадать не будут.",
+    [["off","Отключить","danger"],["","Отмена"]]).then(function(v){
+    if(!v) return;
+    clearTimeout(BK.timer); BK.timer=0; BK.ahead=null; BK.error=""; BK.history=null; BK.fileNames=null;
+    delete BK.meta.dir;
+    return bkTx(["meta"],function(t){t.objectStore("meta").delete("dir");}).then(bkRefresh);
+  });
+}
+
+/* ── экран первого запуска, плашка и значок в шапке ── */
+/* Grid открылся без данных, а браузер умеет работать с папками: первый ли это
+   запуск или браузер очистили — не различить, поэтому экран один */
+function folderGate(){
+  gateEl.classList.remove("work-only");
+  showGate('<div class="gate-mark">Grid</div><h1>Данные Grid на этом компьютере</h1>'+
+    "<p>Grid может хранить данные в папке — тогда очистка браузера их не сотрёт. Выберите папку в Яндекс Диске, "+
+      "OneDrive или Google Диске — тогда данные будут и в облаке.</p>"+
+    '<button class="btn" data-gfind="1">Найти мои данные</button>'+
+    '<p class="small gsub">Grid уже хранил данные в папке — загрузится последняя версия.</p>'+
+    '<button class="btn ghost" data-gnew="1">Выбрать папку для данных</button>'+
+    '<p class="small gsub">Впервые здесь — Grid начнёт с примера.</p>'+
+    '<button class="gskip" data-gskip="1">Начать с нуля без папки</button>',function(el){
+    el.onclick=function(e){
+      var t=e.target;
+      if(t.closest("[data-gfind]")) pickFolder(true,true).then(gateDone);
+      else if(t.closest("[data-gnew]")) pickFolder(false,true).then(gateDone);
+      else if(t.closest("[data-gskip]")) gateDone(true);
+    };
+  });
+}
+function gateDone(ok){
+  if(!ok) return;
+  gateEl.onclick=null; gateEl.classList.add("work-only"); hideGate();
+  bkSet("gate",0).then(bkRefresh);
+}
+function folderStatus(){
+  if(!folder()) return null;
+  if(BK.perm&&BK.perm!=="granted") return {text:"Нет доступа к папке Grid",warn:true};
+  if(BK.ahead) return {text:BK.ahead.dirty?"Две версии — выберите одну":"В папке новая версия",warn:true};
+  if(BK.error) return {text:"Не сохранено в папку",warn:true};
+  var at=BK.meta.dataAt,m=Math.floor((Date.now()-at)/60e3);
+  return {text:!at?"Сохраняем в папку…":"Сохранено в папку · "+(m<1?"только что":m<60?m+" мин назад":fmtWhen(at))};
+}
+function renderFolderStat(){
+  var el=$("#folderStat"),s=folderStatus();
+  el.hidden=!s||document.body.classList.contains("gated");
+  if(!s) return;
+  el.className="fstat"+(s.warn?" warn":"");
+  el.innerHTML=ic(s.warn?"urgent":"check")+"<span>"+esc(s.text)+"</span>";
+  el.title="Папка Grid «"+folder().name+"» — открыть настройки";
+}
+/* плашка под шапкой: доступ, версия из папки, сбой записи */
+function folderBarHTML(){
+  var dir=folder(),a=BK.ahead; if(!dir) return "";
+  var name=esc(dir.name),when=a?esc(fmtWhen(a.head.savedAt)):"";
+  if(BK.perm&&BK.perm!=="granted") return "<span><b>Нет доступа к папке Grid «"+name+"».</b> Изменения пока хранятся в браузере "+
+      "и попадут в папку, как только вы разрешите доступ. Чтобы браузер не спрашивал снова, выберите «Разрешать при каждом посещении».</span>"+
+    '<span class="row"><button class="btn" data-bkallow="1">Разрешить доступ к папке Grid</button></span>';
+  if(a&&a.dirty) return "<span><b>Данные изменены и здесь, и в папке Grid</b> (там версия от "+when+"). Выберите, какую оставить, — "+
+      "вторая сохранится в истории папки.</span>"+
+    '<span class="row"><button class="btn" data-fkeep="folder">Оставить версию из папки</button>'+
+      '<button class="btn ghost" data-fkeep="browser">Оставить версию этого браузера</button></span>';
+  if(a&&BK.later!==a.head.rev) return "<span><b>В папке Grid более новая версия</b> — от "+when+
+      ", с другого компьютера или браузера.</span>"+
+    '<span class="row"><button class="btn" data-fkeep="folder">Загрузить</button><button class="btn ghost" data-flater="1">Не сейчас</button></span>';
+  if(BK.error) return "<span><b>Не удалось сохранить в папку Grid:</b> "+esc(BK.error)+". Изменения пока в браузере.</span>"+
+    '<span class="row"><button class="btn" data-fretry="1">Повторить</button></span>';
+  return "";
+}
+function renderFolderBar(){
+  var el=$("#folderBar"),h=document.body.classList.contains("gated")?"":folderBarHTML();
+  el.hidden=!h; el.innerHTML=h;
+  el.classList.toggle("warn",!!h&&!(BK.ahead&&!BK.ahead.dirty&&!(BK.perm&&BK.perm!=="granted")&&!BK.error));
+}
+/* «Папка Grid» — один и тот же раздел в настройках Grid Work и Grid Life */
+function folderBody(){
+  var dir=folder(),hint='<p class="small">Выберите папку в Яндекс Диске, OneDrive или Google Диске — тогда данные будут и в облаке.</p>';
+  if(!dir) return "<p>Grid может хранить данные в папке на компьютере — тогда очистка браузера их не сотрёт. Браузер остаётся "+
+      "рабочей копией: изменения попадают в папку через несколько секунд, вложения — отдельными файлами.</p>"+
+    '<div class="row"><button class="btn" data-bkfolder="1">Выбрать папку для данных</button></div>'+hint;
+  var s=folderStatus(),denied=BK.perm&&BK.perm!=="granted";
+  return "<p>Данные Grid хранятся в папке «<b>"+esc(dir.name)+"</b>», браузер — рабочая копия.</p>"+
+    '<p class="fline'+(s.warn?" warn":"")+'">'+esc(s.text)+"</p>"+
+    '<div class="row">'+(denied?'<button class="btn" data-bkallow="1">Разрешить доступ к папке Grid</button>':"")+
+      '<button class="btn ghost" data-bkfolder="1">Сменить папку</button><button class="btn ghost" data-bkoff="1">Отключить</button></div>'+hint+
+    "<h4>История в папке</h4>"+
+    '<p class="small">По одной версии за день — последние 7 дней, когда вы работали с Grid, — и версии, отложенные при выборе.</p>'+
+    (BK.history&&BK.history.length?'<div class="snaps">'+BK.history.map(function(n){
+      return '<div class="snap"><span><b>'+esc(histLabel(n))+"</b></span>"+
+        '<button class="btn ghost sm" data-fhist="'+esc(n)+'" aria-label="Загрузить версию: '+esc(histLabel(n))+'">Загрузить</button></div>';
+    }).join("")+"</div>":'<p class="small">Пока пусто: первая версия появится завтра.</p>');
 }
 
 /* ── снимки ── */
@@ -3768,9 +4108,6 @@ function copyDue(){
 }
 /* плашка над доской и над списком Grid Life */
 function copyNoticeHTML(){
-  if(folder()) return BK.want&&!BK.later?"<span><b>Автокопии на паузе.</b> Браузер просит снова разрешить Grid сохранять "+
-      "копии в папку «"+esc(folder().name)+"».</span>"+
-    '<span class="row"><button class="btn" data-bkallow="1">Разрешить</button><button class="btn ghost" data-bklater="1">Позже</button></span>':"";
   if(!copyDue()) return "";
   prepCopy();
   return "<span><b>Сохраните резервную копию.</b> Данные Grid хранятся только на этом устройстве — копия пригодится, "+
@@ -3788,16 +4125,7 @@ function copyBody(){
       '<button class="btn ghost" data-bkrestore="1">Восстановить из файла</button></div>'+
     (SHARE_OK?'<p class="small">Откроется меню «Поделиться»: сохраните файл в «Файлы» или iCloud Drive либо отправьте себе в Telegram.</p>':"")+
     '<p class="small">При восстановлении проекты Grid Work из файла добавляются как новые, а задачи Grid Life заменяют текущие.</p>'+
-    (FOLDER_OK?"<h4>Автокопии в папку</h4>"+(dir
-      ?"<p>Папка «"+esc(dir.name)+"». "+(BK.perm&&BK.perm!=="granted"?"Браузер просит снова разрешить запись в неё."
-          :BK.meta.folderAt?"Последняя автокопия — "+esc(fmtWhen(BK.meta.folderAt))+".":"Автокопий ещё не было.")+"</p>"+
-        '<div class="row">'+(BK.perm&&BK.perm!=="granted"?'<button class="btn" data-bkallow="1">Разрешить</button>':"")+
-          '<button class="btn ghost" data-bkfolder="1">Сменить папку</button><button class="btn ghost" data-bkoff="1">Выключить</button></div>'
-      :"<p>Grid сам сохраняет копию в выбранную папку после изменений — не чаще раза в 10 минут — и хранит там последние "+
-          "7 файлов.</p>"+
-        '<div class="row"><button class="btn ghost" data-bkfolder="1">Выбрать папку для автокопий</button></div>')+
-      '<p class="small">Если папка синхронизируется с Яндекс Диском, Google Диском или iCloud, копии будут и в облаке.</p>':"")+
-    (dir?'<p class="small">Пока включены автокопии, Grid не напоминает о копии.</p>'
+    (dir?'<p class="small">Пока папка Grid подключена, Grid не напоминает о копии.</p>'
       :'<label class="opt"><span>Напоминать о копии</span><select class="in" data-bkevery="1">'+
         [["week","раз в неделю"],["month","раз в месяц"],["never","не напоминать"]].map(function(o){
           return '<option value="'+o[0]+'"'+(every===o[0]?" selected":"")+">"+o[1]+"</option>";}).join("")+"</select></label>");
@@ -3819,23 +4147,39 @@ document.addEventListener("click",function(e){
   var t=e.target,b;
   if(t.closest("[data-bksave]")) saveCopy();
   else if(t.closest("[data-bkrestore]")) pickCopy();
-  else if(t.closest("[data-bkfolder]")) pickFolder();
+  else if(t.closest("[data-bkfolder]")) pickFolder(false,false);
   else if(t.closest("[data-bkallow]")) allowFolder();
   else if(t.closest("[data-bkoff]")) folderOff();
   else if(t.closest("[data-bksnooze]")) bkSet("snooze",Date.now()).then(bkRefresh);
-  else if(t.closest("[data-bklater]")){BK.later=true;bkRefresh();}
+  else if((b=t.closest("[data-fkeep]"))) (b.dataset.fkeep==="folder"?takeFolder:keepBrowser)();
+  else if(t.closest("[data-flater]")){BK.later=BK.ahead&&BK.ahead.head.rev;bkRefresh();}
+  else if(t.closest("[data-fretry]")) saveFolder();
+  else if((b=t.closest("[data-fhist]"))) loadHistory(b.dataset.fhist);
+  else if(t.closest("[data-fstat]")) openSettings("folder");
   else if((b=t.closest("[data-snap]"))) snapRestore(b.dataset.snap,b.dataset.part);
 });
 document.addEventListener("change",function(e){if(e.target.matches("[data-bkevery]")) bkSet("every",e.target.value).then(bkRefresh);});
-/* при открытии и при возвращении в Grid — снимок дня; автокопия, если с прошлой что-то изменилось */
+/* При открытии — снимок дня; папка: доступ, не записал ли её кто-то ещё, несохранённое.
+   Grid открылся без данных, а папку подключить можно, — экран «Данные Grid на этом компьютере».
+   При возвращении в Grid — то же для папки (её могли изменить с другого компьютера). */
 function bkStart(){
   if(BK.started) return;
   BK.started=true;
   bkDB().then(function(){
     var dir=folder();
-    return dir&&dir.queryPermission({mode:"readwrite"}).then(function(p){BK.perm=p;scheduleFolder();});
-  }).then(snapDaily).then(bkRefresh,function(e){flash("Снимки и автокопии недоступны: "+((e&&e.message)||""));});
-  document.addEventListener("visibilitychange",function(){if(!document.hidden&&BK.db) snapDaily().then(bkRefresh);});
+    if(FOLDER_OK&&!dir&&(BK.meta.gate||S.store.isFresh&&S.store.isFresh()&&!GridLife.used())){bkSet("gate",1);folderGate();}
+    return dir&&dir.queryPermission({mode:"readwrite"}).then(function(p){
+      BK.perm=p;
+      if(p==="granted") return readHistory(dir).then(saveFolder);
+    });
+  }).then(snapDaily).then(bkRefresh,function(e){flash("Снимки и папка Grid недоступны: "+errText(e));});
+  document.addEventListener("visibilitychange",function(){
+    if(document.hidden||!BK.db) return;
+    snapDaily().then(bkRefresh);
+    if(folder()) saveFolder();
+  });
+  window.addEventListener("focus",function(){if(BK.db&&folder()) saveFolder();});
+  setInterval(renderFolderStat,30e3);
 }
 
 /* ═════════ настройки ═════════ */
@@ -4003,6 +4347,7 @@ function typesHTML(){
       (own?"":" Статусы и свои типы меняет владелец проекта.")+"</p>");
 }
 function backupHTML(){return setSection("backup","Резервная копия",copyBody());}
+function folderHTML(){return FOLDER_OK?setSection("folder","Папка Grid",folderBody()):"";}
 function snapsHTML(){return setSection("snaps","Снимки",snapsBody("work"));}
 /* сколько места занято: с сервером — файлы в Supabase из 1 ГБ; на устройстве —
    всё, что браузер отвёл сайту (вместе с Grid Life и копией для работы без сети) */
@@ -4020,7 +4365,7 @@ function storageHTML(){
   if(S.store.kind!=="supabase"){
     var est=S.estimate,lp=est&&est.quota?Math.min(100,Math.round(est.usage/est.quota*100)):0;
     return setSection("storage","Хранилище",
-      "<p>"+esc(LOCAL_NOTE)+"</p>"+
+      "<p>"+esc(localNote())+"</p>"+
       (est&&est.quota?'<div class="meter-h"><span>'+fmtSize(est.usage)+" из "+fmtSize(est.quota)+"</span><span>"+lp+"%</span></div>"+
         '<div class="meter'+(lp>=80?" warn":"")+'" role="progressbar" aria-label="Занято места в браузере" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+lp+'">'+
           '<i style="width:'+lp+'%"></i></div>'+
@@ -4406,7 +4751,7 @@ function settingsHTML(){
     groupHead("Вы и участники","Профиль, имена для поля «Ответственный», вид и напоминания.")+
       profileHTML()+peopleHTML()+displayHTML()+notifyHTML()+
     (p?groupHead("Проект «"+p.name+"»","Название, перенос выполненных, статусы и свои типы.")+projectHTML()+typesHTML():"")+
-    groupHead("Данные",LOCAL_NOTE)+backupHTML()+snapsHTML()+storageHTML()+trashHTML()+
+    groupHead("Данные",localNote())+folderHTML()+backupHTML()+snapsHTML()+storageHTML()+trashHTML()+
     aboutHTML()+"</div>";
   return drawerHead("Настройки")+'<div class="d-body wset">'+
     groupHead("Лично для вас","Видите и меняете только вы.")+profileHTML()+displayHTML()+notifyHTML()+calendarsHTML()+
@@ -4439,7 +4784,7 @@ function openSettings(section){
   closeSide(); closeDrawer(); closeSheet();
   settingsEl.innerHTML=settingsContent();
   settingsEl.classList.add("on"); scrimEl.classList.add("on"); settingsEl.setAttribute("aria-hidden","false");
-  var s=typeof section==="string"&&$('[data-set="'+section+'"]',settingsEl);
+  var s=typeof section==="string"&&$('[data-set="'+section+'"],[data-lset="'+section+'"]',settingsEl);
   if(s) s.scrollIntoView({block:"start"});
   var b=$("[data-dclose]",settingsEl); if(b) b.focus({preventScroll:true});
   if(isWork()){fetchStorage();checkPush();loadAccess();}
@@ -4916,14 +5261,19 @@ function attach(store){
 }
 /* Плашка над доской (без сервера): при первом запуске — что это пример и
    где хранятся данные; потом — мягкое напоминание о резервной копии. */
-var LOCAL_NOTE="Все данные хранятся только на этом устройстве и никуда не отправляются. "+
-  "Сохраняйте резервную копию: при очистке браузера или смене устройства данные пропадут.";
+/* где лежат данные: в браузере — или, если подключена, в папке Grid */
+function localNote(){
+  var dir=folder();
+  return dir?"Данные хранятся в папке Grid «"+dir.name+"» на этом компьютере, браузер — рабочая копия. Сам Grid никуда их не отправляет."
+    :"Все данные хранятся только на этом устройстве и никуда не отправляются. "+
+      "Сохраняйте резервную копию: при очистке браузера или смене устройства данные пропадут.";
+}
 function renderNotice(){
   var el=$("#notice"),m=S.store&&S.store.kind==="local"&&!COLLAB?S.store.meta:null,copy;
   if(!m||!isWork()){el.hidden=true;el.innerHTML="";return;}
   if(m.sample){
     el.hidden=false;
-    el.innerHTML='<span><b>Это пример</b> — проекты, задачи и заметки, чтобы было видно, как всё устроено. '+esc(LOCAL_NOTE)+"</span>"+
+    el.innerHTML='<span><b>Это пример</b> — проекты, задачи и заметки, чтобы было видно, как всё устроено. '+esc(localNote())+"</span>"+
       '<span class="row"><button class="btn" data-nreset="1">Очистить и начать с нуля</button>'+
       '<button class="btn ghost" data-nkeep="1">Оставить пример</button></span>';
   }else if((copy=copyNoticeHTML())){el.hidden=false;el.innerHTML=copy;}
@@ -5128,6 +5478,7 @@ window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHO
   attachSwipe:attachSwipe,fitNavTitle:fitNavTitle,navDates:navDates,icsText:icsText,
   collab:COLLAB,systemNotifyHTML:systemNotifyHTML,icsFold:icsFold,saveBlob:saveBlob,fileName:fileName,aboutBody:aboutBody,
   copyBody:copyBody,snapsBody:snapsBody,copyNoticeHTML:copyNoticeHTML,saveCopy:saveCopy,bkChanged:bkChanged,snapDropLife:snapDropLife,
+  folderOK:FOLDER_OK,folderBody:folderBody,localNote:localNote,
   push:{url:pushURL,key:pushKey,support:pushSupport,ask:askNotify,subscription:pushSubscription,error:pushError}};
 /* работа без сети и установка на главный экран (только на http/https) */
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
@@ -5142,7 +5493,7 @@ if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
 /* life.js подключается следующим скриптом, поэтому стартуем, когда он загружен */
 document.addEventListener("DOMContentLoaded",function(){
   setMode(root.dataset.mode);openFromHash();GridLife.boot();
-  /* снимкам и автокопиям нужны оба режима: без сервера данные Grid Work грузим сразу,
+  /* снимкам и папке Grid нужны оба режима: без сервера данные Grid Work грузим сразу,
      даже если открыт Grid Life (снимок — из attach, когда всё загрузилось) */
   if(COLLAB) bkStart(); else bootWork();
 });

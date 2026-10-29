@@ -971,7 +971,11 @@ function replaceData(d){
     return Promise.all([write("tasks",d.tasks,true),write("kinds",d.kinds||[],true),write("files",d.files||[],true)]);
   }).then(function(){
     L.tasks=d.tasks; L.kinds=d.kinds||[]; L.files=d.files||[];
-    BACKUP_META.forEach(function(k){if(d.settings&&d.settings[k]!=null) setMeta(k,d.settings[k]);});
+    /* настройки — ровно как в загруженной версии: чего в ней нет, то сбрасываем */
+    BACKUP_META.forEach(function(k){
+      var v=d.settings&&d.settings[k];
+      if(v!=null) setMeta(k,v); else if(L.meta[k]!=null) setMeta(k,null);
+    });
     render(); K.renderSide(); K.renderSettings(); remindChanged();
   });
 }
@@ -1538,8 +1542,7 @@ function settingsHTML(){
       (K.collab?"<p>Задачи, типы и файлы Grid Life хранятся только на этом устройстве, в этом браузере. "+
         "Вход не нужен, всё работает без интернета. На сервер ничего не отправляется — кроме времени напоминаний, "+
         "если включить их на закрытом Grid.</p>"
-      :"<p>Все данные хранятся только на этом устройстве и никуда не отправляются. Сохраняйте резервную копию: "+
-        "при очистке браузера или смене устройства данные пропадут.</p>")+
+      :"<p>"+esc(K.localNote())+"</p>")+
       '<div class="meter-h"><span>Задачи и типы: '+K.fmtSize(dataSize)+" · файлы: "+K.fmtSize(filesSize)+"</span></div>"+
       (est&&est.quota?'<div class="meter" role="progressbar" aria-label="Занято места в браузере" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+
           pct+'"><i style="width:'+pct+'%"></i></div>'+
@@ -1553,6 +1556,7 @@ function settingsHTML(){
         CLEAN.map(function(c){return '<option value="'+c[0]+'">'+c[1]+"</option>";}).join("")+"</select>"+
         '<button class="btn ghost" data-lcleango="1">Удалить</button></div></div>'+
       '<div class="row"><button class="btn danger" data-lwipe="1">Удалить все данные Grid Life</button></div>')+
+    (K.folderOK?sec("folder","Папка Grid",K.folderBody()):"")+
     sec("backup","Резервная копия",K.copyBody())+
     sec("snaps","Снимки",K.snapsBody("life"))+
     sec("install","На главный экран",
@@ -1719,7 +1723,10 @@ window.GridLife={
   sideHTML:sideHTML,
   settingsHTML:settingsHTML,
   /* копия и снимки (grid.html) */
-  raw:rawData, load:replaceData, copyPart:copyPart, fromCopy:fromCopy, copyAllowed:copyAllowed,
+  raw:rawData, load:replaceData, copyPart:copyPart, fromCopy:fromCopy, copyAllowed:copyAllowed, used:used,
+  /* папка Grid хранит и PIN: после очистки браузера Grid Life снова под PIN */
+  pin:function(){return used()?ready().then(function(){return L.meta.pin||null;}):Promise.resolve(null);},
+  setPin:function(p){if(p) setMeta("pin",p); else if(L.meta.pin) setMeta("pin",null);},
   hasData:function(){return L.ready&&live().length>0;},
   refresh:function(){render();},
   dialog:dialog

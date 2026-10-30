@@ -1454,6 +1454,11 @@ function askPersist(){
   persistAsked=true;
   navigator.storage.persist().then(function(p){S.persisted=p;renderSettings();},function(){});
 }
+/* Без сервера почты в Grid нет: ни в профилях, ни в участниках проектов. Правило
+   держит само хранилище — для каждой записи и для данных, сохранённых раньше
+   (их чистим при загрузке). */
+var MAILED=["profiles","project_members"];
+function noMail(c,r){return r.email&&MAILED.indexOf(c)>=0?Object.assign({},r,{email:""}):r;}
 function localStore(){
   var db=null,data={},meta={},subs={},fresh=false;
   function tx(stores,fn){
@@ -1485,13 +1490,15 @@ function localStore(){
     db=d;
     return Promise.all(COLLS.concat(["meta"]).map(function(c){return idbAll(db.transaction(c).objectStore(c));}));
   }).then(function(r){
-    COLLS.forEach(function(c,i){data[c]=r[i];});
+    var mailed=false;
+    COLLS.forEach(function(c,i){data[c]=r[i].map(function(x){var y=noMail(c,x);if(y!==x)mailed=true;return y;});});
     r[COLLS.length].forEach(function(x){meta[x.key]=x.value;});
-    if(meta.started) return;
+    if(meta.started) return mailed?saved(tx(MAILED,function(t){
+      MAILED.forEach(function(c){data[c].forEach(function(x){t.objectStore(c).put(x);});});})):null;
     var old=null; try{old=JSON.parse(localStorage.getItem(OLD_KEY));}catch(e){}
     var first=old&&old.projects?fromOld(old):{data:starter(),me:"m-1",sample:true};
     fresh=!!first.sample;
-    COLLS.forEach(function(c){data[c]=first.data[c]||[];});
+    COLLS.forEach(function(c){data[c]=(first.data[c]||[]).map(function(x){return noMail(c,x);});});
     Object.assign(meta,{started:Date.now(),me:first.me,sample:!!first.sample});
     return writeAll(data,meta).then(function(){
       try{localStorage.removeItem(OLD_KEY);localStorage.removeItem("grid.demo.me");}catch(e){}
@@ -1505,11 +1512,11 @@ function localStore(){
     subscribe:function(c,cb){(subs[c]=subs[c]||[]).push(cb);
       ready.then(function(){cb(data[c].slice());});
       return function(){subs[c]=subs[c].filter(function(f){return f!==cb;});};},
-    set:function(c,id,body){var i=idx(c,id),rec=Object.assign({},body,{id:id});
+    set:function(c,id,body){var i=idx(c,id),rec=noMail(c,Object.assign({},body,{id:id}));
       if(i<0)data[c].push(rec);else data[c][i]=rec;emit(c);
       return saved(tx([c],function(t){t.objectStore(c).put(rec);}));},
     update:function(c,id,patch){var i=idx(c,id);if(i<0)return Promise.resolve();
-      var rec=data[c][i]=Object.assign({},data[c][i],patch);emit(c);
+      var rec=data[c][i]=noMail(c,Object.assign({},data[c][i],patch));emit(c);
       return saved(tx([c],function(t){t.objectStore(c).put(rec);}));},
     del:function(c,id){
       var gone={};
@@ -1524,15 +1531,20 @@ function localStore(){
     },
     /* все коллекции разом — из снимка; meta (хозяин устройства) остаётся */
     replace:function(d){
-      COLLS.forEach(function(c){data[c]=(d[c]||[]).slice();});
+      COLLS.forEach(function(c){data[c]=(d[c]||[]).map(function(x){return noMail(c,x);});});
       meta.sample=false;
       COLLS.forEach(emit);
       return saved(writeAll(data,meta));
     },
-    /* «Очистить и начать с нуля»: остаётся только профиль хозяина устройства */
-    reset:function(){var mine=find(data.profiles,meta.me);return this.replace({profiles:mine?[mine]:[]});}
+    /* «Очистить и начать с нуля»: остаётся только профиль хозяина устройства — фото, цвет,
+       настройки; имя из примера («Аня») не ваше, его убираем */
+    reset:function(){
+      var mine=find(data.profiles,meta.me);
+      return this.replace({profiles:mine?[mine.name===SAMPLE_ME?Object.assign({},mine,{name:""}):mine]:[]});
+    }
   };
 }
+var SAMPLE_ME="Аня";
 function starter(){
   var d=new Date(); d.setDate(d.getDate()+4); var soon=iso(d);
   var s=new Date(); s.setDate(s.getDate()-2); var past=iso(s);
@@ -1543,17 +1555,14 @@ function starter(){
     order:order,title:title,desc:"",done:false,start:"",due:"",priority:"med",status:"todo",kind:"",
     assignee:"",archived:false,archivedAt:0,deletedAt:0,createdAt:now,updatedAt:now},o||{});}
   function proj(id,name,order){return {id:id,name:name,descr:"",order:order,doneMoveDefault:true,deletedAt:0};}
-  function prof(id,name,mail,color){return {id:id,email:mail,name:name,color:color,avatar:"",settings:{}};}
-  /* pm-4 — приглашение, которое ещё ждёт входа */
-  function mem(id,pid,who,mail,role){return {id:id,projectId:pid,userId:who,email:mail,role:role,createdAt:now};}
-  var A="anya@example.com",B="boris@example.com",V="vera@example.com";
+  function prof(id,name,color){return {id:id,email:"",name:name,color:color,avatar:"",settings:{}};}
+  function mem(id,pid,who,role){return {id:id,projectId:pid,userId:who,email:"",role:role,createdAt:now};}
   return {
     projects:[proj("p-1","Запуск продукта",1000),proj("p-2","Маркетинг",2000)],
-    /* три примера с разными ролями: в настройках можно посмотреть доску глазами каждого */
-    profiles:[prof("m-1","Аня",A,PALETTE[0]),prof("m-2","Борис",B,PALETTE[1]),prof("m-3","Вера",V,PALETTE[4])],
-    project_members:[mem("pm-1","p-1","m-1",A,"owner"),mem("pm-2","p-1","m-2",B,"editor"),
-                     mem("pm-3","p-1","m-3",V,"viewer"),mem("pm-4","p-1","","dima@example.com","editor"),
-                     mem("pm-5","p-2","m-1",A,"owner"),mem("pm-6","p-2","m-3",V,"editor")],
+    /* вы в примере — «Аня» (m-1); Борис и Вера — участники для поля «Ответственный» */
+    profiles:[prof("m-1",SAMPLE_ME,PALETTE[0]),prof("m-2","Борис",PALETTE[1]),prof("m-3","Вера",PALETTE[4])],
+    project_members:[mem("pm-1","p-1","m-1","owner"),mem("pm-2","p-1","m-2","editor"),mem("pm-3","p-1","m-3","viewer"),
+                     mem("pm-5","p-2","m-1","owner"),mem("pm-6","p-2","m-3","editor")],
     statuses:statusRows("p-1",function(k){return k;}).concat(statusRows("p-2",function(k){return "p2-"+k;})),
     kinds:[{id:"k-1",projectId:"p-1",scope:"task",label:"Инфраструктура",color:"purple",icon:"code",order:1000}],
     columns:[col("c-1","p-1","Бэклог",1000,""),col("c-2","p-1","В работе",2000,"blue"),

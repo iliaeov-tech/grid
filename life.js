@@ -1627,7 +1627,7 @@ function settingsHTML(){
     sec("install","На главный экран",
       "<p>Grid можно установить как приложение: он откроется с главного экрана и без интернета.</p>"+
       (installEvt?'<div class="row"><button class="btn" data-linstall="1">Установить</button></div>'
-        :'<p class="small">iPhone: Safari → «Поделиться» → «На экран Домой». Android и компьютер: меню браузера → «Установить приложение».</p>'))+
+        :'<p class="small">iPhone: Safari → «Поделиться» → «На экран „Домой“». Android и компьютер: меню браузера → «Установить приложение».</p>'))+
     sec("about","О Grid",K.aboutBody())+
     "</div>";
 }
@@ -1794,6 +1794,8 @@ window.GridLife={
   setPin:function(p){if(p) setMeta("pin",p); else if(L.meta.pin) setMeta("pin",null);},
   hasData:function(){return L.ready&&live().length>0;},
   refresh:function(){render();},
-  dialog:dialog
+  dialog:dialog,
+  /* «Как устроен Grid»: как на этом устройстве называется вход без PIN */
+  bioName:bioName
 };
 })();

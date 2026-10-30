@@ -757,6 +757,11 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none}
 .gate .gskip{display:block;margin:18px auto 0;padding:6px;border:0;background:none;color:var(--ink-3);font-size:13px;
   text-decoration:underline;cursor:pointer}
 .gate .gskip:hover{color:var(--ink)}
+/* «Как устроен Grid»: коротко — на экране выбора папки и в карточке (ниже, у входа), полностью — в «О Grid» */
+.howto{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px;color:var(--ink-2)}
+.howto li{position:relative;padding-left:15px}
+.howto li::before{content:"";position:absolute;left:1px;top:.65em;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+.howto b{font-weight:600;color:var(--ink)}
 .set .ab-lic{margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
 .set .ab-lic a{color:var(--accent)}
 .set .ab-tg{align-items:center;column-gap:12px}
@@ -903,6 +908,17 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none}
 .gate .msg.bad{background:var(--danger-soft);color:var(--danger)}
 .gate code{font-family:var(--f-mono);font-size:12px;background:var(--ground);
   padding:1px 5px;border-radius:4px;word-break:break-all}
+/* «Как устроен Grid» на входе: на широком экране выбор папки — справа от пунктов, сразу на виду */
+.gate .howto{font-size:13px;line-height:1.5}
+.gate-box.how{max-width:420px}
+.gate .how h1{margin-bottom:14px}
+.gate [data-howmore]{margin:8px 0 18px -6px;font-size:12.5px}
+@media (min-width:760px){
+  .gate-box.how.cols{max-width:800px;display:grid;grid-template-columns:minmax(0,1fr) 290px;column-gap:32px;align-items:start}
+  .gate-box.how.cols h1{grid-column:1/-1}
+  .gate-box.how.cols [data-howmore]{margin-bottom:0}
+}
+@media (max-width:440px){.gate{padding-left:16px;padding-right:16px}.gate-box{padding:22px 20px}}
 
 /* ───────────────── узкий экран ───────────────── */
 @media (max-width:640px){

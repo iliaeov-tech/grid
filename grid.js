@@ -2921,31 +2921,54 @@ function folderOff(){
   });
 }
 
-/* ── экран первого запуска, плашка и значок в шапке ── */
+/* ── «Как устроен Grid», экран первого запуска, плашка и значок в шапке ── */
+/* «Как устроен Grid» коротко: на компьютере с папкой — на экране выбора папки, на телефоне
+   и в браузерах без папки — карточкой один раз. Полностью — в «О Grid» (howtoFull) */
+function howtoShort(){
+  var data="<b>Данные — только на этом "+(FOLDER_OK?"компьютере":"устройстве")+".</b> Grid ничего не отправляет на серверы, у автора нет к ним доступа.",
+    lock="<b>Ставьте блокировку экрана.</b> Для Grid Life есть PIN и вход по "+GridLife.bioName()+".",
+    list=FOLDER_OK?[data,
+      "<b>Выберите папку для данных.</b> В Яндекс Диске или Google Диске она будет и в облаке, и на других ваших компьютерах.",
+      "<b>Работайте на одном компьютере за раз.</b> Если версии разойдутся, Grid спросит, какую оставить, а вторую сохранит в истории папки.",
+      "<b>С телефоном синхронизации нет.</b> Переносите данные резервной копией: «Настройки» → «Резервная копия».",lock]
+    :[data,
+      iosDevice()?"<b>Установите Grid на экран «Домой»</b>, иначе Safari может стереть данные.":"",
+      "<b>Очистка браузера сотрёт данные.</b> Сохраняйте резервную копию: «Настройки» → «Резервная копия».",
+      "<b>Синхронизации нет.</b> Перенести данные на другое устройство можно этой же копией.",lock];
+  return '<ul class="howto">'+list.filter(Boolean).map(function(s){return "<li>"+s+"</li>";}).join("")+"</ul>"+
+    '<button class="lnk" data-howmore="1">Подробнее</button>';
+}
 /* Grid открылся без данных, а браузер умеет работать с папками: первый ли это
    запуск или браузер очистили — не различить, поэтому экран один */
 function folderGate(){
   gateEl.classList.remove("work-only");
-  showGate('<div class="gate-mark">Grid</div><h1>Данные Grid на этом компьютере</h1>'+
-    "<p>Grid может хранить данные в папке — тогда очистка браузера их не сотрёт. Выберите папку в Яндекс Диске, "+
-      "OneDrive или Google Диске — тогда данные будут и в облаке.</p>"+
-    '<button class="btn" data-gfind="1">Найти мои данные</button>'+
+  showGate('<h1>Как устроен Grid</h1><div class="how-text">'+howtoShort()+"</div>"+
+    '<div class="how-act"><button class="btn" data-gfind="1">Найти мои данные</button>'+
     '<p class="small gsub">Grid уже хранил данные в папке — загрузится последняя версия.</p>'+
     '<button class="btn ghost" data-gnew="1">Выбрать папку для данных</button>'+
     '<p class="small gsub">Впервые здесь — Grid начнёт с примера.</p>'+
-    '<button class="gskip" data-gskip="1">Начать с нуля без папки</button>',function(el){
-    el.onclick=function(e){
-      var t=e.target;
-      if(t.closest("[data-gfind]")) pickFolder(true,true).then(gateDone);
-      else if(t.closest("[data-gnew]")) pickFolder(false,true).then(gateDone);
-      else if(t.closest("[data-gskip]")) gateDone(true);
-    };
-  });
+    '<button class="gskip" data-gskip="1">Начать с нуля без папки</button></div>',gateWire,"how cols");
 }
+/* телефон и браузеры без папки: «Как устроен Grid» один раз, до «Понятно» */
+function introSeen(){try{return localStorage.getItem("grid.intro")==="1";}catch(e){return true;}}
+function introCard(){
+  gateEl.classList.remove("work-only");
+  showGate("<h1>Как устроен Grid</h1>"+howtoShort()+'<button class="btn" data-gok="1">Понятно</button>',gateWire,"how");
+}
+function gateWire(el){
+  el.onclick=function(e){
+    var t=e.target;
+    if(t.closest("[data-howmore]")) openSettings("howto");
+    else if(t.closest("[data-gok]")){try{localStorage.setItem("grid.intro","1");}catch(x){} gateClose();}
+    else if(t.closest("[data-gfind]")) pickFolder(true,true).then(gateDone);
+    else if(t.closest("[data-gnew]")) pickFolder(false,true).then(gateDone);
+    else if(t.closest("[data-gskip]")) gateDone(true);
+  };
+}
+function gateClose(){gateEl.onclick=null; gateEl.classList.add("work-only"); hideGate();}
 function gateDone(ok){
   if(!ok) return;
-  gateEl.onclick=null; gateEl.classList.add("work-only"); hideGate();
-  bkSet("gate",0).then(bkRefresh);
+  gateClose(); bkSet("gate",0).then(bkRefresh);
 }
 function folderStatus(){
   if(!folder()) return null;
@@ -3147,7 +3170,8 @@ document.addEventListener("click",function(e){
 });
 document.addEventListener("change",function(e){if(e.target.matches("[data-bkevery]")) bkSet("every",e.target.value).then(bkRefresh);});
 /* При открытии — снимок дня; папка: доступ, не записал ли её кто-то ещё, несохранённое.
-   Grid открылся без данных, а папку подключить можно, — экран «Данные Grid на этом компьютере».
+   Grid открылся без данных, а папку подключить можно, — экран выбора папки с «Как устроен Grid»;
+   папки нет — карточка «Как устроен Grid», пока её не закрыли «Понятно».
    При возвращении в Grid — то же для папки (её могли изменить с другого компьютера). */
 function bkStart(){
   if(BK.started) return;
@@ -3155,6 +3179,7 @@ function bkStart(){
   bkDB().then(function(){
     var dir=folder();
     if(FOLDER_OK&&!dir&&(BK.meta.gate||S.store.isFresh&&S.store.isFresh()&&!GridLife.used())){bkSet("gate",1);folderGate();}
+    else if(!COLLAB&&!FOLDER_OK&&!introSeen()) introCard();
     return dir&&dir.queryPermission({mode:"readwrite"}).then(function(p){
       BK.perm=p;
       if(p==="granted") return readHistory(dir).then(saveFolder);
@@ -3419,6 +3444,26 @@ function versionDate(){var d=new Date(document.lastModified);return isNaN(d)?"":
 function telegramName(){var n=String((window.GRID_CONFIG||{}).telegram||"").trim().replace(/^@/,"");return /^\w{5,32}$/.test(n)?n:"";}
 /* шрифты лежат на сайте вместе с текстом лицензии (fonts/…/OFL.txt) */
 var FONT_LICENSES=[["Golos Text","golos-text"],["Unbounded","unbounded"],["JetBrains Mono","jetbrains-mono"]];
+/* «Как устроен Grid» полностью — без сервера; коротко — howtoShort */
+function howtoFull(){
+  return '<h4 data-set="howto">Как устроен Grid</h4><ul class="howto" data-howto="1">'+[
+    "<b>Где данные.</b> Задачи, заметки, файлы и настройки хранятся только на этом устройстве, в браузере. "+
+      "Grid ничего не отправляет на серверы, у автора нет к ним доступа.",
+    "<b>Компьютер.</b> В Chrome, Edge и Яндекс Браузере выберите папку для данных: «Настройки» → «Папка Grid». "+
+      "Тогда очистка браузера их не сотрёт. Если положить папку в Яндекс Диск или Google Диск (через их приложение "+
+      "на компьютере), данные будут и в облаке, и на других ваших компьютерах. Работайте на одном компьютере за раз: "+
+      "если версии разойдутся, Grid спросит, какую оставить, а вторую сохранит в истории папки.",
+    "<b>Телефон.</b> Установите Grid на экран «Домой»: Safari → «Поделиться» → «На экран „Домой“». Иначе Safari "+
+      "может стереть данные, если долго не открывать Grid. Автоматической синхронизации с телефоном нет.",
+    "<b>Перенос.</b> «Настройки» → «Резервная копия» → «Сохранить копию». На телефоне откроется меню «Поделиться» — "+
+      "сохраните файл в Яндекс Диск или «Файлы». На другом устройстве нажмите «Восстановить из файла».",
+    "<b>Снимки.</b> Каждый день, когда вы открываете Grid, он сохраняет снимок в этом браузере — к нему можно вернуться "+
+      "после неудачной правки. От очистки браузера снимки не спасут: для этого папка или резервная копия.",
+    "<b>Защита.</b> Ставьте блокировку экрана на телефон и компьютер: кто откроет устройство, откроет и Grid. "+
+      "Для Grid Life есть PIN и вход по Face ID, Touch ID или Windows Hello — «Приватность» в настройках Grid Life. "+
+      "Это защита экрана, а не шифрование."
+  ].map(function(s){return "<li>"+s+"</li>";}).join("")+"</ul>";
+}
 /* «О Grid» — одно и то же в настройках Grid Work и Grid Life */
 function aboutBody(){
   var tg=telegramName();
@@ -3427,7 +3472,7 @@ function aboutBody(){
     '<p class="small">Версия от '+esc(versionDate())+"</p>"+
     (tg?'<div class="row ab-tg"><a class="btn ghost" href="https://t.me/'+tg+'" target="_blank" rel="noopener noreferrer">'+
         'Сотрудничество и отзывы</a><span>Telegram: @'+tg+"</span></div>":"")+
-    (COLLAB?"":'<h4>Конфиденциальность</h4>'+
+    (COLLAB?"":howtoFull()+'<h4>Конфиденциальность</h4>'+
       "<p>Grid не собирает и не передаёт ваши данные: задачи, заметки, файлы и настройки хранятся только в браузере "+
         "этого устройства. Сайт размещён на GitHub Pages — как любой хостинг, GitHub видит обычные сведения о посещении "+
         "(адрес и браузер). Если вы напишете нам в Telegram, мы увидим ваш профиль Telegram и используем его только "+
@@ -3439,7 +3484,8 @@ function aboutBody(){
     '<ul class="ab-lic">'+FONT_LICENSES.map(function(f){
       return "<li>Шрифт "+f[0]+' — SIL Open Font License 1.1, <a href="fonts/'+f[1]+'/OFL.txt" target="_blank" rel="noopener">текст лицензии</a></li>';
     }).join("")+"<li>Значки нарисованы для Grid. "+(COLLAB?"Для совместной работы загружается библиотека supabase-js (лицензия MIT).":
-      "Сторонних библиотек сайт не загружает.")+"</li></ul>";
+      "Сторонних библиотек сайт не загружает.")+"</li></ul>"+
+    '<p class="small">© 2026 Илья Емельянов. Все права защищены.</p>';
 }
 function aboutHTML(){return setSection("about","О Grid",aboutBody());}
 function myFeed(){return S.feeds.filter(function(f){return f.userId===S.me;})[0]||null;}
@@ -4300,9 +4346,9 @@ if(COLLAB&&!CFG){try{var raw=localStorage.getItem("grid.cfg");
 var AUTH=(CFG&&CFG.auth)||"google";
 
 function hideGate(){gateEl.hidden=true;gateEl.innerHTML="";document.body.classList.remove("gated");}
-function showGate(html,wire){
+function showGate(html,wire,cls){
   gateEl.hidden=false; document.body.classList.add("gated");
-  gateEl.innerHTML='<div class="gate-box">'+html+"</div>";
+  gateEl.innerHTML='<div class="gate-box'+(cls?" "+cls:"")+'">'+html+"</div>";
   if(wire) wire(gateEl);
 }
 /* в демо «вы» — один из примеров; кого выбрать, решают в настройках профиля */

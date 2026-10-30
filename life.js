@@ -41,6 +41,9 @@ function relDay(s){var t=today();return s===t?"Сегодня":s===addDays(t,1)?
 function minutes(t){var p=t.split(":");return (+p[0])*60+(+p[1]);}
 function hhmm(m){return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");}
 function pad(n){return String(n).padStart(2,"0");}
+/* «3 нояб» — дедлайн многодневной задачи в подписях */
+var DUE_MONTHS=["янв","фев","мар","апр","мая","июн","июл","авг","сент","окт","нояб","дек"];
+function dueText(s){var d=K.parseISO(s);return d.getDate()+" "+DUE_MONTHS[d.getMonth()];}
 /* время на экране: 14:00 или 2:00 PM — по настройке */
 function fmtTime(t){
   if(!t||lp().h24) return t;
@@ -221,25 +224,35 @@ function repeatLabel(r,date){
    оно одно и совпадает с ней, у повторяющейся их много. it.t — то, что
    показываем (с правками этого повтора), it.task — сама запись,
    it.orig — исходная дата повтора. */
-function item(t,date){return {t:t,task:t,orig:date,date:date,done:!!t.done,key:t.id+"|"+date,rec:false};}
+/* Многодневная задача: date — начало, due — дедлайн, последний день срока.
+   Без due (старые задачи и копии) задача однодневная. it.end — последний день. */
+var ISO_DAY=/^\d{4}-\d\d-\d\d$/;
+function lastDay(t){return t.date&&typeof t.due==="string"&&ISO_DAY.test(t.due)&&t.due>t.date?t.due:t.date;}
+function spanOf(t){var e=lastDay(t);return e&&e!==t.date?K.daysBetween(K.parseISO(t.date),K.parseISO(e)):0;}
+function item(t,date){return {t:t,task:t,orig:date,date:date,end:lastDay(t),done:!!t.done,key:t.id+"|"+date,rec:false};}
 function occItem(t,orig){
-  var o=(t.occ||{})[orig]||{},v=Object.assign({},t,o.patch||{});
+  var o=(t.occ||{})[orig]||{},v=Object.assign({},t,o.patch||{}),span=spanOf(t);
   v.date=(o.patch&&o.patch.date)||orig;
-  return {t:v,task:t,orig:orig,date:v.date,done:!!o.done,key:t.id+"|"+orig,rec:true};
+  /* у повтора срок той же длины, что у серии, если у него не свой дедлайн */
+  if(!(o.patch&&"due" in o.patch)) v.due=span?addDays(v.date,span):"";
+  return {t:v,task:t,orig:orig,date:v.date,end:lastDay(v),done:!!o.done,key:t.id+"|"+orig,rec:true};
 }
+/* повторы, чей срок задевает [from,to] — и начавшиеся раньше from */
 function occurrencesIn(t,from,to){
   var occ=t.occ||{},out=[],seen={};
-  seriesDates(t,from,to).forEach(function(d){
+  function within(it){return it.date<=to&&it.end>=from;}
+  seriesDates(t,addDays(from,-spanOf(t)),to).forEach(function(d){
     seen[d]=1;
     if(occ[d]&&occ[d].deleted) return;
     var it=occItem(t,d);
-    if(it.date>=from&&it.date<=to) out.push(it);
+    if(within(it)) out.push(it);
   });
   /* повторы, перенесённые в этот диапазон из других дней */
   Object.keys(occ).forEach(function(d){
     var o=occ[d];
-    if(seen[d]||o.deleted||!o.patch||!o.patch.date||o.patch.date<from||o.patch.date>to||!isSeriesDate(t,d)) return;
-    out.push(occItem(t,d));
+    if(seen[d]||o.deleted||!o.patch||!o.patch.date||o.patch.date>to||!isSeriesDate(t,d)) return;
+    var it=occItem(t,d);
+    if(within(it)) out.push(it);
   });
   return out;
 }
@@ -252,11 +265,11 @@ function byTime(a,b){
 function itemsBetween(from,to){
   var out=[],td=today(),hide=lp().hidePastDone;
   /* по настройке выполненное в прошедших днях не показываем */
-  function add(i){if(!(hide&&i.done&&i.date<td)) out.push(i);}
+  function add(i){if(!(hide&&i.done&&i.end<td)) out.push(i);}
   live().forEach(function(t){
     if(!t.date) return;
     if(t.repeat) occurrencesIn(t,from,to).forEach(function(i){if(visible(i.t)) add(i);});
-    else if(visible(t)&&t.date>=from&&t.date<=to) add(item(t,t.date));
+    else if(visible(t)&&t.date<=to&&lastDay(t)>=from) add(item(t,t.date));
   });
   return out.sort(byTime);
 }
@@ -267,9 +280,9 @@ function overdue(){
   live().forEach(function(x){
     if(!x.date) return;
     if(x.repeat){
-      var miss=occurrencesIn(x,addDays(t,-366),y).filter(function(i){return !i.done&&visible(i.t);}).sort(byTime);
+      var miss=occurrencesIn(x,addDays(t,-366),y).filter(function(i){return !i.done&&i.end<t&&visible(i.t);}).sort(byTime);
       if(miss.length) out.push(miss[miss.length-1]);
-    }else if(x.date<t&&!x.done&&visible(x)) out.push(item(x,x.date));
+    }else if(lastDay(x)<t&&!x.done&&visible(x)) out.push(item(x,x.date));
   });
   return out.sort(byTime);
 }
@@ -288,7 +301,7 @@ function findItem(key){
 /* ═════════ изменения ═════════ */
 function blankTask(o){
   var now=Date.now();
-  return Object.assign({id:"",title:"",date:today(),time:"",end:"",kind:"",priority:"med",desc:"",done:false,
+  return Object.assign({id:"",title:"",date:today(),due:"",time:"",end:"",kind:"",priority:"med",desc:"",done:false,
     repeat:null,occ:{},createdAt:now,updatedAt:now,deletedAt:0},o||{});
 }
 function occOf(t,orig){t.occ=t.occ||{};return t.occ[orig]||(t.occ[orig]={});}
@@ -304,8 +317,9 @@ function moveToToday(keys){
   var d=today();
   keys.forEach(function(k){
     var it=findItem(k); if(!it) return;
-    if(it.rec){var o=occOf(it.task,it.orig);o.patch=Object.assign({},o.patch,{date:d});}
-    else it.task.date=d;
+    var sp=K.daysBetween(K.parseISO(it.date),K.parseISO(it.end));      /* многодневная переезжает целиком */
+    if(it.rec){var o=occOf(it.task,it.orig);o.patch=Object.assign({},o.patch,{date:d},sp?{due:addDays(d,sp)}:{});}
+    else{it.task.date=d;if(sp) it.task.due=addDays(d,sp);}
     putTask(it.task);
   });
   render();
@@ -324,7 +338,7 @@ function removeTask(id){
 
 /* Правка и удаление повтора. scope: "one" — только этот повтор, "next" —
    этот и следующие (серия делится на две), "all" — вся серия. */
-var OCC_FIELDS=["title","date","time","end","kind","priority","desc","remind"];
+var OCC_FIELDS=["title","date","due","time","end","kind","priority","desc","remind"];
 function splitSeries(t,orig){
   var before=seriesDates(t,t.date,addDays(orig,-1)).length;
   var nt=Object.assign({},t,{id:newId(),date:orig,occ:{},repeat:Object.assign({},t.repeat),createdAt:Date.now()});
@@ -335,11 +349,17 @@ function splitSeries(t,orig){
   return nt;
 }
 function applyAll(t,orig,edits){
+  var was=occItem(t,orig).date;
   Object.keys(edits).forEach(function(f){
     /* новая дата у всей серии — сдвиг её начала на ту же разницу дней */
     if(f==="date"){if(edits.date) t.date=addDays(t.date,K.daysBetween(K.parseISO(orig),K.parseISO(edits.date)));}
-    else t[f]=edits[f];
+    else if(f!=="due") t[f]=edits[f];
   });
+  /* дедлайн у всей серии — срок той же длины от её начала */
+  if("due" in edits){
+    var from=edits.date||was,sp=edits.due&&edits.due>from?K.daysBetween(K.parseISO(from),K.parseISO(edits.due)):0;
+    t.due=sp?addDays(t.date,sp):"";
+  }
   if(!t.repeat) t.occ={};
   putTask(t);
 }
@@ -420,9 +440,12 @@ function toolbarHTML(){
       '<button class="btn ghost lt-today" data-ltoday="1">Сегодня</button></div></div>';
 }
 function kindStyle(t){var k=kindOf(t.kind);return k&&k.color?K.tint(k.color):"";}
-function rowHTML(it,od){
-  var t=it.t,k=kindOf(t.kind),pr=t.priority||"med",nf=filesOf(t.id).length;
-  var when=!it.date?"":od?K.shortDate(K.parseISO(it.date))+(t.time?" "+fmtTime(t.time):"")
+/* day — день, в котором стоит строка: многодневная в день начала — «до 3 нояб», потом — «идёт, до 3 нояб» */
+function rowHTML(it,od,day){
+  var t=it.t,k=kindOf(t.kind),pr=t.priority||"med",nf=filesOf(t.id).length,multi=it.date&&it.end!==it.date;
+  var when=!it.date?"":multi?(od?"до "+dueText(it.end):day&&day>it.date?"идёт, до "+dueText(it.end)
+      :(t.time?fmtTime(t.time)+", ":"")+"до "+dueText(it.end))
+    :od?K.shortDate(K.parseISO(it.date))+(t.time?" "+fmtTime(t.time):"")
     :t.time?fmtTime(t.time)+(t.end?"–"+fmtTime(t.end):""):"весь день";
   var meta=(k?K.kindChip(k):"")+
     (pr==="high"||pr==="urgent"?'<span class="chip prio loud" style="--pc:'+K.prioVar(pr)+";--pcs:"+K.prioSoft(pr)+'">'+
@@ -441,7 +464,7 @@ function daySectionHTML(d,items){
   return '<section class="lsec"><div class="lday-h"><button class="lday-t'+(d===today()?" today":"")+'" data-lnew="'+d+'">'+
       esc(rel||cap(text))+(rel?"<small>"+esc(text)+"</small>":"")+"</button>"+
       '<button class="icon-btn" data-lnew="'+d+'" aria-label="Добавить задачу на '+esc(longDate(d))+'">'+ic("plus")+"</button></div>"+
-    (items.length?items.map(function(i){return rowHTML(i,false);}).join("")
+    (items.length?items.map(function(i){return rowHTML(i,false,d);}).join("")
       :'<button class="lempty" data-lnew="'+d+'">Задач нет — нажмите, чтобы добавить</button>')+"</section>";
 }
 function listHTML(){
@@ -451,7 +474,7 @@ function listHTML(){
       '<span class="n">'+od.length+'</span><span class="sp"></span>'+
       '<button class="btn ghost sm" data-lmoveall="1">Всё на сегодня</button></div>'+
       od.map(function(i){return rowHTML(i,true);}).join("")+"</section>";
-  itemsBetween(t,to).forEach(function(i){(by[i.date]=by[i.date]||[]).push(i);});
+  itemsBetween(t,to).forEach(function(i){var day=i.date<t?t:i.date;(by[day]=by[day]||[]).push(i);});
   for(var d=t;d<=to;d=addDays(d,1)){
     if(d===t||by[d]) h+=daySectionHTML(d,by[d]||[]);
   }
@@ -486,8 +509,19 @@ function layout(items){
   });
   return ev;
 }
-function chipHTML(i){
-  return '<button class="lchip'+(i.done?" done":"")+'" data-lopen="'+esc(i.key)+'" style="'+kindStyle(i.t)+'">'+esc(i.t.title)+"</button>";
+/* Полосы дней — как многодневные задачи в календаре Grid Work: многодневная
+   тянется через дни, задача на весь день — полоса в один день. Дорожки
+   раскладывает K.lanes (общая с Grid Work). */
+function barHTML(e,row){
+  var i=e.x.i;
+  return '<button class="lbar'+(i.done?" done":"")+(e.cl?" cl":"")+(e.cr?" cr":"")+'" data-lopen="'+esc(i.key)+'" style="grid-column:'+
+    (e.from+1)+" / span "+e.span+";grid-row:"+row+";"+kindStyle(i.t)+'" title="'+esc(i.t.title)+'">'+esc(i.t.title)+"</button>";
+}
+function dayLanes(items,dates){
+  var list=items.map(function(i){return {a:i.date,b:i.end,i:i};});
+  if(dates.length===7) return K.lanes(list,dates[0]);
+  var d=dates[0];
+  return list.filter(function(x){return x.a<=d&&x.b>=d;}).map(function(x,n){return {x:x,lane:n,from:0,span:1,cl:x.a<d,cr:x.b>d};});
 }
 function blockHTML(x){
   var t=x.i.t;
@@ -496,38 +530,49 @@ function blockHTML(x){
     "<b>"+esc(t.title)+"</b><span>"+fmtTime(t.time)+(t.end?"–"+fmtTime(t.end):"")+"</span></button>";
 }
 function gridHTML(dates,cls){
-  var t=today(),by={},hours="",h24=lp().h24;
-  itemsBetween(dates[0],dates[dates.length-1]).forEach(function(i){(by[i.date]=by[i.date]||[]).push(i);});
+  var t=today(),by={},hours="",h24=lp().h24,items=itemsBetween(dates[0],dates[dates.length-1]);
+  /* в сетке часов — задачи со временем на один день; многодневные и на весь день — полосами в строке «весь день» */
+  var ev=dayLanes(items.filter(function(i){return !i.t.time||i.end!==i.date;}),dates);
+  var lanes=ev.reduce(function(m,e){return Math.max(m,e.lane+1);},1);
+  items.forEach(function(i){if(i.t.time&&i.end===i.date)(by[i.date]=by[i.date]||[]).push(i);});
   for(var h=1;h<24;h++) hours+='<span style="top:'+h*HH+'px">'+(h24?pad(h)+"<i>:00</i>":(h%12||12)+"<i>"+(h<12?" AM":" PM")+"</i>")+"</span>";
   var now=new Date(),nowTop=(now.getHours()*60+now.getMinutes())*HH/60;
   return '<div class="lgrid '+cls+'" style="--days:'+dates.length+";--hh:"+HH+'px">'+
     '<div class="lg-row lg-head"><div></div>'+dates.map(function(d){
       return '<button class="lg-dh'+(d===t?" today":"")+'" data-lgoto="'+d+'" aria-label="'+esc(longDate(d))+'">'+wd(d)+
         "<b>"+K.parseISO(d).getDate()+"</b></button>";}).join("")+"</div>"+
-    '<div class="lg-row lg-allday"><div class="lg-gutter">весь<br>день</div>'+dates.map(function(d){
-      return '<div class="lg-ad" data-lad="'+d+'" title="Добавить задачу на весь день">'+
-        (by[d]||[]).filter(function(i){return !i.t.time;}).map(chipHTML).join("")+"</div>";}).join("")+"</div>"+
+    '<div class="lg-row lg-allday"><div class="lg-gutter">весь<br>день</div><div class="lg-adg" style="--lanes:'+lanes+'">'+
+      dates.map(function(d,j){
+        return '<div class="lg-ad" data-lad="'+d+'" style="grid-column:'+(j+1)+'" title="Добавить задачу на весь день"></div>';}).join("")+
+      ev.map(function(e){return barHTML(e,e.lane+1);}).join("")+"</div></div>"+
     '<div class="lg-scroll"><div class="lg-body"><div class="lg-hours">'+hours+"</div>"+dates.map(function(d){
       return '<div class="lcol'+(d===t?" today":"")+'" data-lslot="'+d+'">'+
-        layout((by[d]||[]).filter(function(i){return i.t.time;})).map(blockHTML).join("")+
+        layout(by[d]||[]).map(blockHTML).join("")+
         (d===t?'<div class="lnow" style="top:'+nowTop+'px"></div>':"")+"</div>";}).join("")+
     "</div></div></div>";
 }
+/* месяц: на компьютере полосы по неделям (3 дорожки и «ещё N»), на телефоне — точки во всех днях срока */
+var MONTH_LANES=3;
 function monthHTML(){
-  var c=L.cursor,first=c.slice(0,8)+"01",start=shownWeek(first),t=today(),sel=L.selected||t,by={},cells="";
-  itemsBetween(start,addDays(start,41)).forEach(function(i){(by[i.date]=by[i.date]||[]).push(i);});
-  for(var n=0;n<42;n++){
-    var d=addDays(start,n),list=by[d]||[],out=d.slice(0,7)!==c.slice(0,7);
-    cells+='<div class="mc'+(out?" out":"")+(d===t?" today":"")+(d===sel?" sel":"")+'" data-lsel="'+d+'">'+
-      '<button class="mc-n" data-lsel="'+d+'" aria-label="'+esc(longDate(d))+(list.length?", задач: "+list.length:"")+
-        (d===sel?", выбран — нажмите ещё раз, чтобы добавить задачу":"")+'">'+K.parseISO(d).getDate()+"</button>"+
-      '<span class="mc-items">'+list.slice(0,3).map(chipHTML).join("")+
-        (list.length>3?'<span class="mc-more">ещё '+(list.length-3)+"</span>":"")+"</span>"+
-      '<span class="mc-dots" aria-hidden="true">'+list.slice(0,3).map(function(i){
-        return '<i style="'+kindStyle(i.t)+'"></i>';}).join("")+"</span></div>";
+  var c=L.cursor,start=shownWeek(c.slice(0,8)+"01"),t=today(),sel=L.selected||t,weeks="";
+  var items=itemsBetween(start,addDays(start,41)),list=items.map(function(i){return {a:i.date,b:i.end,i:i};});
+  for(var w=0;w<6;w++){
+    var ws=addDays(start,w*7),ev=K.lanes(list,ws),cells="",more="";
+    for(var j=0;j<7;j++){
+      var d=addDays(ws,j),out=d.slice(0,7)!==c.slice(0,7),day=items.filter(function(i){return i.date<=d&&i.end>=d;});
+      var hidden=ev.filter(function(e){return e.lane>=MONTH_LANES&&e.from<=j&&e.from+e.span>j;}).length;
+      cells+='<div class="mc'+(out?" out":"")+(d===t?" today":"")+(d===sel?" sel":"")+'" data-lsel="'+d+'" style="grid-column:'+(j+1)+'">'+
+        '<button class="mc-n" data-lsel="'+d+'" aria-label="'+esc(longDate(d))+(day.length?", задач: "+day.length:"")+
+          (d===sel?", выбран — нажмите ещё раз, чтобы добавить задачу":"")+'">'+K.parseISO(d).getDate()+"</button>"+
+        '<span class="mc-dots" aria-hidden="true">'+day.slice(0,3).map(function(i){
+          return '<i style="'+kindStyle(i.t)+'"></i>';}).join("")+"</span></div>";
+      if(hidden) more+='<span class="mc-more" style="grid-column:'+(j+1)+";grid-row:"+(MONTH_LANES+2)+'">ещё '+hidden+"</span>";
+    }
+    weeks+='<div class="lm-row">'+cells+ev.filter(function(e){return e.lane<MONTH_LANES;}).map(function(e){
+      return barHTML(e,e.lane+2);}).join("")+more+"</div>";
   }
   return '<div class="lv-body"><div class="lmonth"><div class="lm-week">'+dayOrder().map(function(i){return "<span>"+WEEKDAYS[i]+"</span>";}).join("")+
-    '</div><div class="lm-grid">'+cells+'</div><div class="lm-agenda">'+daySectionHTML(sel,itemsBetween(sel,sel))+"</div></div></div>";
+    '</div><div class="lm-grid">'+weeks+'</div><div class="lm-agenda">'+daySectionHTML(sel,itemsBetween(sel,sel))+"</div></div></div>";
 }
 function bodyHTML(){
   if(L.view==="day") return gridHTML([L.cursor],"day");
@@ -669,6 +714,8 @@ function setField(name,value){
   edit(name,value);
   render(); repaintPanel();
 }
+/* новая дата начала: многодневная задача переезжает целиком, срок той же длины */
+function moveStart(task,d){var sp=spanOf(task);edit("due",d&&sp?addDays(d,sp):"");setField("date",d);}
 /* окончание новой задачи по длительности из настроек; не позже полуночи */
 function endFor(time){
   var d=lp().duration,e=time?minutes(time)+d:0;
@@ -720,7 +767,9 @@ function panelHTML(){
   var t=cur(),isNew=!!P.draft,s=series(),allDay=!t.time,pr=t.priority||"med",fs=isNew?[]:filesOf(t.id),td=today(),tm=addDays(td,1);
   /* тип, убранный из списка, у задачи всё равно виден */
   var ks=kindsAll(); if(t.kind&&!K.find(ks,t.kind)&&kindOf(t.kind)) ks=ks.concat([kindOf(t.kind)]);
-  var eyebrow=isNew?"Новая задача":(s?"Повтор · ":"")+(t.date?(relDay(t.date)?relDay(t.date)+", ":"")+longDate(t.date):"Без даты");
+  var multi=!!t.date&&lastDay(t)!==t.date;
+  var eyebrow=isNew?"Новая задача":(s?"Повтор · ":"")+(t.date?(relDay(t.date)?relDay(t.date)+", ":"")+longDate(t.date)+
+    (multi?" – "+longDate(lastDay(t)):""):"Без даты");
   var body='<div class="d-body"><div class="d-title-row">'+
       (isNew?"":'<button class="check" data-lpcheck="1" role="checkbox" aria-checked="'+(findItem(P.id+"|"+P.date)||{done:!!t.done}).done+
         '" style="margin-top:9px" aria-label="'+(s?"Выполнен этот повтор":"Выполнено")+'">'+K.CHECK_SVG+"</button>")+
@@ -731,12 +780,16 @@ function panelHTML(){
       '<span class="lbl">Дата</span><div class="ctl"><input type="date" data-lf="date" value="'+esc(t.date)+'" aria-label="Дата">'+
         '<div class="quick"><button data-lq="'+td+'" aria-pressed="'+(t.date===td)+'">Сегодня</button>'+
         '<button data-lq="'+tm+'" aria-pressed="'+(t.date===tm)+'">Завтра</button>'+
-        (t.repeat?"":'<button data-lq="" aria-pressed="'+!t.date+'">Без даты</button>')+"</div></div>"+
+        (t.repeat?"":'<button data-lq="" aria-pressed="'+!t.date+'">Без даты</button>')+"</div>"+
+        (t.date?'<label class="switch"><input type="checkbox" data-lmulti="1"'+(multi?" checked":"")+"><span><b>Несколько дней</b></span></label>":"")+
+      "</div>"+
+      (multi?'<span class="lbl">Дедлайн</span><div class="ctl"><input type="date" data-lf="due" min="'+esc(t.date)+'" value="'+
+        esc(lastDay(t))+'" aria-label="Дедлайн"></div>':"")+
       '<span class="lbl">Время</span><div class="ctl">'+
         '<label class="switch"><input type="checkbox" data-lallday="1"'+(allDay?" checked":"")+"><span><b>Весь день</b></span></label>"+
         (allDay?"":'<div class="times"><input type="time" data-lf="time" value="'+esc(t.time)+'" aria-label="Начало">'+
           '<span>–</span><input type="time" data-lf="end" value="'+esc(t.end)+'" aria-label="Окончание, необязательно"></div>'+
-          '<p class="hint">Окончание можно не указывать.</p>')+"</div>"+
+          '<p class="hint">'+(multi?"Начало — в первый день, окончание — в день дедлайна.":"Окончание можно не указывать.")+"</p>")+"</div>"+
       '<span class="lbl">Повтор</span><div class="ctl">'+repeatHTML(t)+"</div>"+
       '<span class="lbl">Напоминания</span><div class="ctl">'+remindHTML(t)+"</div>"+
       '<span class="lbl">Тип</span><div class="ctl"><div class="seg kinds">'+ks.map(function(k){
@@ -765,7 +818,7 @@ panel.addEventListener("click",function(e){
   if(t.closest("button")) flushTitle();
   if(t.closest("[data-dclose]")||t.closest("[data-lpdone]")){closePanel();return;}
   if(t.closest("[data-lpcheck]")){toggleDone(P.id+"|"+P.date);return;}
-  if((b=t.closest("[data-lq]"))){setField("date",b.dataset.lq);return;}
+  if((b=t.closest("[data-lq]"))){moveStart(task,b.dataset.lq);return;}
   if((b=t.closest("[data-lkind]"))){setField("kind",task.kind===b.dataset.lkind?"":b.dataset.lkind);return;}
   if((b=t.closest("[data-lknew]"))){editKind(b,null,function(id){setField("kind",id);});return;}
   if((b=t.closest("[data-lprio]"))){setField("priority",b.dataset.lprio);return;}
@@ -821,14 +874,21 @@ panel.addEventListener("change",function(e){
   }
   if(t.matches("[data-lf=date]")){
     if(!t.value&&task.repeat){K.flash("У повторяющейся задачи должна быть дата");repaintPanel();return;}
-    setField("date",t.value||""); return;}
+    moveStart(task,t.value||""); return;}
+  if(t.matches("[data-lmulti]")){
+    if(!t.checked&&task.end&&task.end<=task.time) edit("end","");      /* снова один день: окончание — позже начала */
+    setField("due",t.checked&&task.date?addDays(task.date,1):""); return;}
+  if(t.matches("[data-lf=due]")){
+    if(t.value&&t.value<task.date){K.flash("Дедлайн не может быть раньше даты начала");repaintPanel();return;}
+    setField("due",t.value>task.date?t.value:""); return;}
+  /* у многодневной окончание — в другой день, раньше начала по часам оно может быть */
   if(t.matches("[data-lf=time]")){
     if(!t.value){edit("end","");setField("time","");return;}
-    if(task.end&&task.end<=t.value) edit("end","");
+    if(task.end&&task.end<=t.value&&lastDay(task)===task.date) edit("end","");
     setField("time",t.value); return;
   }
   if(t.matches("[data-lf=end]")){
-    if(t.value&&t.value<=task.time){K.flash("Окончание должно быть позже начала");repaintPanel();return;}
+    if(t.value&&t.value<=task.time&&lastDay(task)===task.date){K.flash("Окончание должно быть позже начала");repaintPanel();return;}
     setField("end",t.value||""); return;
   }
   if(t.matches("[data-lrep]")){
@@ -1237,7 +1297,7 @@ var CLEAN=[[30,"месяц"],[90,"три месяца"],[180,"полгода"],[
 /* выполненные обычные задачи старше срока; повторяющиеся не трогаем — это серии */
 function oldDone(days){
   var edge=addDays(today(),-days),ms=Date.now()-days*864e5;
-  return live().filter(function(t){return t.done&&!t.repeat&&(t.date?t.date<edge:(t.updatedAt||0)<ms);});
+  return live().filter(function(t){return t.done&&!t.repeat&&(t.date?lastDay(t)<edge:(t.updatedAt||0)<ms);});
 }
 function cleanDone(days){
   var list=oldDone(days),label=CLEAN.filter(function(c){return c[0]===days;})[0][1];
@@ -1270,7 +1330,10 @@ function estimate(){
    себя, и sw.js показывает по ней название. */
 var REMINDS=[[0,"В момент начала"],[5,"За 5 минут"],[15,"За 15 минут"],[30,"За 30 минут"],[60,"За 1 час"],[1440,"За 1 день"]];
 var REMIND_MAX=7*1440,REMIND_DAYS=60;
+/* «В день дедлайна» многодневной задачи — в этот день, во время напоминаний о задачах на весь день */
+var REMIND_DUE=-1;
 function remindLabel(m){
+  if(m===REMIND_DUE) return "В день дедлайна";
   var f=REMINDS.filter(function(r){return r[0]===m;})[0];
   if(f) return f[1];
   if(m%1440===0) return "За "+m/1440+" "+plural(m/1440,"день","дня","дней");
@@ -1281,33 +1344,32 @@ function remindsOf(t){
   var p=lp();
   if(p.remindMode==="off") return [];
   /* только числа: список мог прийти из чужой резервной копии, а значения попадают в разметку */
-  if(Array.isArray(t.remind)) return t.remind.filter(function(m){return typeof m==="number"&&m>=0&&m<=REMIND_MAX;});
+  if(Array.isArray(t.remind)) return t.remind.filter(function(m){
+    return typeof m==="number"&&(m>=0&&m<=REMIND_MAX||m===REMIND_DUE&&lastDay(t)!==t.date);});
   return p.remindMode==="all"||p.remindMode==="important"&&(t.priority==="high"||t.priority==="urgent")?[+p.remindDefault||0]:[];
 }
-function startOf(it){
-  var hm=(it.t.time||lp().remindAllDay||"09:00").split(":"),d=K.parseISO(it.date);
-  d.setHours(+hm[0],+hm[1],0,0);
-  return d.getTime();
-}
+function moment(date,time){var hm=time.split(":"),d=K.parseISO(date);d.setHours(+hm[0],+hm[1],0,0);return d.getTime();}
+function startOf(it){return moment(it.date,it.t.time||lp().remindAllDay||"09:00");}
 /* напоминания, которые срабатывают в промежутке (from, to], по времени */
 function remindersBetween(from,to){
   var out=[],a=K.iso(new Date(from)),b=addDays(K.iso(new Date(to)),REMIND_MAX/1440+1);
   live().forEach(function(t){
     if(!t.date) return;
-    (t.repeat?occurrencesIn(t,a,b):t.date>=a&&t.date<=b?[item(t,t.date)]:[]).forEach(function(it){
+    (t.repeat?occurrencesIn(t,a,b):t.date<=b&&lastDay(t)>=a?[item(t,t.date)]:[]).forEach(function(it){
       if(it.done) return;
       var s=startOf(it);
       remindsOf(it.t).forEach(function(m){
-        var at=s-m*60000;
-        if(at>from&&at<=to) out.push({k:it.key,at:at,it:it});
+        var due=m===REMIND_DUE,at=due?moment(it.end,lp().remindAllDay||"09:00"):s-m*60000;
+        if(at>from&&at<=to) out.push({k:it.key,at:at,it:it,due:due});
       });
     });
   });
   return out.sort(function(x,y){return x.at-y.at;});
 }
 /* «Сегодня в 15:00» — относительно дня, когда сработает напоминание */
-function whenText(it,at){
+function whenText(it,at,due){
   var fd=K.iso(new Date(at)),d=it.date,t=it.t.time;
+  if(due) return "Дедлайн сегодня"+(t&&it.t.end?", до "+fmtTime(it.t.end):"");
   return (d===fd?"Сегодня":d===addDays(fd,1)?"Завтра":cap(wd(d))+", "+longDate(d))+(t?" в "+fmtTime(t):", весь день");
 }
 function titleShown(){var p=lp();return p.remindTitle===true||p.remindTitle!==false&&!L.meta.pin;}
@@ -1321,7 +1383,7 @@ function remindTick(){
   if(!L.ready||pushLifeOn()&&granted) return;
   var due=remindersBetween(from,now); if(!due.length) return;
   var x=due[0],show=titleShown(),title=show?x.it.t.title||"Без названия":"Grid Life";
-  var body=(show?"":"Напоминание · ")+whenText(x.it,x.at)+(due.length>1?" · и ещё "+(due.length-1):"");
+  var body=(show?"":"Напоминание · ")+whenText(x.it,x.at,x.due)+(due.length>1?" · и ещё "+(due.length-1):"");
   var url="grid.html#life="+encodeURIComponent(x.k);
   if(granted&&navigator.serviceWorker&&navigator.serviceWorker.controller){
     navigator.serviceWorker.ready.then(function(reg){
@@ -1359,7 +1421,7 @@ function syncRemind(force){
     var j=sub.toJSON(),sig=j.endpoint+"|"+list.map(function(x){return x.k+"@"+x.at;}).join(",");
     if(!force&&sig===L.meta.remindSig) return;
     var map={},items=list.map(function(x){
-      var rid=b64u(rnd(12)); map[rid]={k:x.k,w:whenText(x.it,x.at)};
+      var rid=b64u(rnd(12)); map[rid]={k:x.k,w:whenText(x.it,x.at,x.due)};
       return {rid:rid,at:new Date(x.at).toISOString()};
     });
     return lifeCall({life:"save",token:L.meta.deviceToken,sub:j,items:items}).then(function(){
@@ -1395,7 +1457,8 @@ function remindHTML(t){
     return '<span class="rc">'+esc(remindLabel(m))+'<button class="x" data-lremdel="'+m+'" aria-label="Убрать: '+esc(remindLabel(m))+'">'+K.X_BTN+"</button></span>";
   }).join("")+"</div>";
   h+='<select data-lremadd="1" aria-label="Добавить напоминание"><option value="">'+(list.length?"Ещё напоминание…":"Добавить напоминание…")+"</option>"+
-    REMINDS.filter(function(r){return list.indexOf(r[0])<0;}).map(function(r){return '<option value="'+r[0]+'">'+r[1]+"</option>";}).join("")+
+    REMINDS.concat(t.date&&lastDay(t)!==t.date?[[REMIND_DUE,"В день дедлайна"]]:[]).filter(function(r){return list.indexOf(r[0])<0;})
+      .map(function(r){return '<option value="'+r[0]+'">'+r[1]+"</option>";}).join("")+
     '<option value="custom">Своё время…</option></select>';
   if(P.remCustom) h+='<div class="rep-row"><span>За</span><input type="number" min="1" max="99" value="10" data-lremn="1" aria-label="Сколько">'+
     '<select data-lremu="1" aria-label="Чего"><option value="1">минут</option><option value="60">часов</option><option value="1440">дней</option></select>'+
@@ -1419,11 +1482,12 @@ function addRemind(task,m){
 var BYDAY=["MO","TU","WE","TH","FR","SA","SU"];
 function icsWhen(date,time){return date.replace(/-/g,"")+(time?"T"+time.replace(":","")+"00":"");}
 function downloadICS(t){
-  var allDay=!t.time,r=t.repeat,title=t.title||"Без названия";
+  var allDay=!t.time,r=t.repeat,title=t.title||"Без названия",end=lastDay(t),span=spanOf(t);
   var lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Grid//Life//RU","BEGIN:VEVENT","UID:"+t.id+"@grid-life",
     "DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,""),
     allDay?"DTSTART;VALUE=DATE:"+icsWhen(t.date):"DTSTART:"+icsWhen(t.date,t.time)];
-  if(allDay) lines.push("DTEND;VALUE=DATE:"+icsWhen(addDays(t.date,1)));
+  if(allDay) lines.push("DTEND;VALUE=DATE:"+icsWhen(addDays(end,1)));
+  else if(span) lines.push("DTEND:"+icsWhen(end,t.end||"23:59"));      /* окончание — в день дедлайна */
   else if(t.end) lines.push("DTEND:"+icsWhen(t.date,t.end));
   lines.push("SUMMARY:"+K.icsText(title));
   if(t.desc) lines.push("DESCRIPTION:"+K.icsText(t.desc));
@@ -1440,7 +1504,8 @@ function downloadICS(t){
   /* у задачи на весь день напоминание считается от полуночи */
   var base=allDay?minutes(lp().remindAllDay||"09:00"):0;
   remindsOf(t).forEach(function(m){
-    var d=base-m;
+    /* «в день дедлайна» — через срок после начала, во время напоминаний о задачах на весь день */
+    var d=m===REMIND_DUE?span*1440+minutes(lp().remindAllDay||"09:00")-(allDay?0:minutes(t.time)):base-m;
     lines.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+K.icsText(title),"TRIGGER:"+(d<0?"-":"")+"PT"+Math.abs(d)+"M","END:VALARM");
   });
   lines.push("END:VEVENT","END:VCALENDAR");

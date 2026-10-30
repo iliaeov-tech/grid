@@ -519,6 +519,10 @@ select.pick{padding:7px 10px;border-radius:99px;border:1px solid var(--line-2);
 .scrim{position:fixed;inset:0;background:rgba(33,38,57,.28);z-index:40;
   opacity:0;pointer-events:none;transition:opacity .2s}
 .scrim.on{opacity:1;pointer-events:auto}
+/* открыта панель или окно — страница стоит (см. «прокрутка под открытой панелью»); прокрутка панели не уходит дальше */
+html.locked,html.locked body{overflow:hidden;overscroll-behavior:none}
+.d-body,.side-body,.sheet,.ldialog-box,.gate{overscroll-behavior:contain}
+.scrim,.d-head,.d-foot{touch-action:none}
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(440px,100vw);z-index:50;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
   background:var(--surface);border-left:1px solid var(--line);box-shadow:var(--sh-2);
@@ -5476,6 +5480,49 @@ function setMode(m){
 }
 $("#modeSwitch").addEventListener("click",function(){setMode(isWork()?"life":"work");});
 
+/* ═════════ прокрутка под открытой панелью ═════════ */
+/* Пока открыта панель или окно (задача, настройки, боковая панель, выбор,
+   вопрос, экран PIN, экран папки), страница под ними не прокручивается, а
+   после закрытия стоит на прежнем месте. Прокрутку панели у края держит CSS
+   (overscroll-behavior), но Safari на iPhone всё равно тянет страницу, если
+   палец лёг на шапку панели или на фон, — такие касания гасим сами: сдвинуться
+   может только прокручиваемая часть панели и только пока ей есть куда. */
+var OVERLAYS="#settings.on,#drawer.on,#lifePanel.on,.side.on,.sheet,.ldialog,.llock,#gate:not([hidden])";
+var lockY=0,touch0=null;
+function syncLock(){
+  var on=!!document.querySelector(OVERLAYS),root=document.documentElement;
+  if(on===root.classList.contains("locked")) return;
+  if(on) lockY=window.scrollY;
+  root.classList.toggle("locked",on);
+  if(!on&&window.scrollY!==lockY) window.scrollTo(0,lockY);
+}
+function watchLock(){
+  var mo=new MutationObserver(syncLock);
+  mo.observe(document.body,{childList:true});           /* окна выбора, вопросы и экран PIN — новые узлы body */
+  ["settings","drawer","lifePanel","side","gate"].forEach(function(id){
+    var el=document.getElementById(id); if(el) mo.observe(el,{attributes:true,attributeFilter:["class","hidden"]});
+  });
+  syncLock();
+}
+/* может ли элемент ещё прокрутиться: d>0 — палец идёт вниз (к началу), d<0 — вверх (к концу) */
+function canScroll(el,vert,d){
+  var cs=getComputedStyle(el),ov=vert?cs.overflowY:cs.overflowX;
+  if(ov!=="auto"&&ov!=="scroll") return false;
+  var pos=vert?el.scrollTop:el.scrollLeft,max=vert?el.scrollHeight-el.clientHeight:el.scrollWidth-el.clientWidth;
+  return max>1&&(d>0?pos>0:pos<max-1);
+}
+document.addEventListener("touchstart",function(e){
+  var t=e.touches[0]; touch0=e.touches.length===1?{x:t.clientX,y:t.clientY}:null;
+},{passive:true});
+document.addEventListener("touchmove",function(e){
+  if(!touch0||!document.documentElement.classList.contains("locked")||e.touches.length!==1) return;
+  var t=e.target;
+  if(t===document.activeElement&&/^(INPUT|TEXTAREA)$/.test(t.tagName)) return;   /* выделяют текст в поле */
+  var p=e.touches[0],dx=p.clientX-touch0.x,dy=p.clientY-touch0.y,vert=Math.abs(dy)>=Math.abs(dx);
+  for(var el=t;el&&el.nodeType===1&&el!==document.body;el=el.parentNode){if(canScroll(el,vert,vert?dy:dx)) return;}
+  if(e.cancelable) e.preventDefault();
+},{passive:false});
+
 /* общие помощники для life.js */
 window.GridKit={$:$,$$:$$,esc:esc,uid:uid,clamp:clamp,ic:ic,ICONS:ICONS,ICON_CHOICES:ICON_CHOICES,
   TINTS:TINTS,tint:tint,PRIOS:PRIOS,prioVar:prioVar,prioSoft:prioSoft,MONTHS:MONTHS,MONTHS_FULL:MONTHS_FULL,
@@ -5501,7 +5548,7 @@ if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
 }
 /* life.js подключается следующим скриптом, поэтому стартуем, когда он загружен */
 document.addEventListener("DOMContentLoaded",function(){
-  setMode(root.dataset.mode);openFromHash();GridLife.boot();
+  setMode(root.dataset.mode);openFromHash();GridLife.boot();watchLock();
   /* снимкам и папке Grid нужны оба режима: без сервера данные Grid Work грузим сразу,
      даже если открыт Grid Life (снимок — из attach, когда всё загрузилось) */
   if(COLLAB) bkStart(); else bootWork();

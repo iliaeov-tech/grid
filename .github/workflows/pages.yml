@@ -1,0 +1,43 @@
+# Проверка и публикация сайта. При каждом пуше в main сначала идёт проверка
+# (.github/check-site.js: внешние адреса и политика безопасности), и только если
+# она прошла — публикация на GitHub Pages. Работает, когда в настройках
+# репозитория Settings → Pages → Build and deployment → Source выбрано «GitHub Actions».
+name: Проверка и публикация
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Внешние адреса и CSP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node .github/check-site.js
+
+  deploy:
+    name: Публикация
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
